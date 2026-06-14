@@ -1,0 +1,38 @@
+{
+  "memory": {
+    "dataPath": "./data/memory-server",
+    "enablePayloadOffload": true,
+    "offloadThreshold": 8000,
+    "tokenBudget": 4096
+  },
+  "model": {
+    "enabled": false,
+    "strict": false,
+    "formatType": "openai",
+    "baseUrl": "<your model api base url>",
+    "apiKey": "<your model api key>",
+    "modelName": "<your model name>",
+    "timeoutSeconds": 60,
+    "temperature": 0,
+    "maxTokens": 4096
+  },
+  "server": {
+    "debugErrors": false,
+    "auth": {
+      "apiToken": ""
+    },
+    "http": {
+      "host": "127.0.0.1",
+      "port": 8090,
+      "maxPayloadBytes": 1048576,
+      "readTimeoutSeconds": 30,
+      "writeTimeoutSeconds": 30,
+      "threadCount": 4
+    },
+    "mcp": {
+      "mode": "http",
+      "path": "/mcp",
+      "maxMessageBytes": 1048576
+    }
+  }
+}

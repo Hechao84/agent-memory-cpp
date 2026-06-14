@@ -1,5 +1,14 @@
-build-*/
+# Build Output
+build*/
 dist/
+
+# Running data
 model_config.local.json
+data/
 *.log
-.cache/
+
+# Program todo list
+todo.md
+
+# Sensitive Data & Local Config
+opencode.json

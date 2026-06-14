@@ -27,18 +27,22 @@ curl -fsS -X POST "http://127.0.0.1:$PORT/v1/events" \
     -d '{"type":2,"agentId":"agent-1","sessionId":"session-1","role":"user","content":"I prefer concise answers about tests"}' >/dev/null
 curl -fsS -X POST "http://127.0.0.1:$PORT/v1/consolidate" \
     -H 'Content-Type: application/json' \
-    -d '{"agentId":"agent-1","sessionId":"session-1","force":true}' >/dev/null
+    -d '{"agentId":"agent-1","sessionId":"session-1","forceReprocess":true}' >/dev/null
 curl -fsS -X POST "http://127.0.0.1:$PORT/v1/context" \
     -H 'Content-Type: application/json' \
     -d '{"agentId":"agent-1","sessionId":"session-1","query":"answer"}' >/dev/null
 curl -fsS "http://127.0.0.1:$PORT/v1/stats" >/dev/null
-
-printf '%s\n' \
-    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-    '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"memory_append_event","arguments":{"type":2,"agentId":"agent-1","sessionId":"session-1","role":"user","content":"I prefer MCP tests"}}}' \
-    '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"memory_consolidate","arguments":{"agentId":"agent-1","sessionId":"session-1","force":true}}}' \
-    '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"memory_stats","arguments":{}}}' \
-    | LD_LIBRARY_PATH="$BUILD_DIR" "$BUILD_DIR/memory-mcp-server" --data "$DATA_DIR" >/dev/null
+curl -fsS -X POST "http://127.0.0.1:$PORT/mcp" \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' >/dev/null
+curl -fsS -X POST "http://127.0.0.1:$PORT/mcp" \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' >/dev/null
+curl -fsS -X POST "http://127.0.0.1:$PORT/mcp" \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"memory_append_event","arguments":{"type":2,"agentId":"agent-1","sessionId":"session-1","role":"user","content":"I prefer MCP tests"}}}' >/dev/null
+curl -fsS -X POST "http://127.0.0.1:$PORT/mcp" \
+    -H 'Content-Type: application/json' \
+    -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"memory_consolidate","arguments":{"agentId":"agent-1","sessionId":"session-1","forceReprocess":true}}}' >/dev/null
 
 echo "Smoke tests passed"
