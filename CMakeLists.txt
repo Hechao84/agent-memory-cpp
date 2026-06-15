@@ -47,6 +47,7 @@ endif()
 set(AGENT_MEMORY_CORE_SOURCES
     src/core/builtin_memory_runtime.cpp
     src/core/context_builder.cpp
+    src/core/payload_query.cpp
     src/core/payload_service.cpp
     src/core/runtime_paths.cpp
     src/core/runtime_services.cpp

@@ -244,6 +244,19 @@ int main()
             return 1;
         }
     }
+    auto payloadQueryRequest = payloadsOnlyRequest;
+    payloadQueryRequest.query = "TEST_TOOL tool_result";
+    auto payloadQueryContext = runtime.BuildContext(payloadQueryRequest);
+    if (payloadQueryContext.context.payloadRefs.empty()) {
+        std::cerr << "BuildContext payload token query should match across fields\n";
+        return 1;
+    }
+    payloadQueryRequest.query = "tool-name missing-token";
+    auto missingPayloadQueryContext = runtime.BuildContext(payloadQueryRequest);
+    if (!missingPayloadQueryContext.context.payloadRefs.empty()) {
+        std::cerr << "BuildContext payload token query should require all terms\n";
+        return 1;
+    }
     auto longTermOnlyRequest = contextRequest;
     longTermOnlyRequest.includeSections = {"long_term"};
     auto longTermOnlyContext = runtime.BuildContext(longTermOnlyRequest);

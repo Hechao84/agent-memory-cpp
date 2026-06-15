@@ -1,26 +1,18 @@
 #include "context_builder.h"
 
 #include <algorithm>
-#include <cctype>
 #include <set>
 #include <sstream>
 #include <utility>
 
 #include "context_sections.h"
 #include "json_helpers.h"
+#include "payload_query.h"
 #include "store.h"
 
 namespace agent_memory {
 
 namespace {
-
-std::string Lower(std::string value)
-{
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    return value;
-}
 
 void AddUniqueCitation(std::vector<std::string>& citations, const std::string& citation)
 {
@@ -281,10 +273,11 @@ std::vector<MemoryPayloadRef> ContextBuilder::LoadPayloadsForContext(const Memor
         return {};
     }
 
+    PayloadQuery query = ParsePayloadQuery(request.query);
     std::vector<MemoryPayloadRef> combined;
     std::set<std::string> seen;
     for (const auto& payload : store_->LoadRecentPayloads(request.agentId, request.sessionId, limit)) {
-        if (!seen.insert(payload.uri).second || !MatchesQuery(payload, request.query)) {
+        if (!seen.insert(payload.uri).second || !MatchesPayloadQuery(payload, query)) {
             continue;
         }
         combined.push_back(payload);
@@ -308,17 +301,6 @@ bool ContextBuilder::ShouldInclude(const MemoryContextRequest& request, std::str
         }
     }
     return false;
-}
-
-bool ContextBuilder::MatchesQuery(const MemoryPayloadRef& payload, const std::string& query) const
-{
-    if (query.empty()) {
-        return true;
-    }
-
-    std::string haystack = Lower(payload.uri + "\n" + payload.toolName + "\n" + payload.summary + "\n" + payload.contentType);
-    std::string needle = Lower(query);
-    return haystack.find(needle) != std::string::npos;
 }
 
 int ContextBuilder::LongTermMemoryLimit(const MemoryContextRequest& request) const

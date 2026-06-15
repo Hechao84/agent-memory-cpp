@@ -111,7 +111,7 @@ Tool result offloaded from <toolName>, original chars: <n>.
 
 - 从 Store 中加载当前 `agentId/sessionId` 范围内的最近 payload。
 - Store 是 payload 引用的单一事实来源，Runtime 不再维护 payload 内存快照。
-- 使用 `query` 对 uri、toolName、summary、contentType 做大小写不敏感过滤。
+- 使用内部 `PayloadQuery` 模块解析 `query`：当前实现为大小写不敏感的空白分词，并要求所有 token 都命中 uri、toolName、summary、contentType 任一字段。
 
 ## 与其他模块关系
 
