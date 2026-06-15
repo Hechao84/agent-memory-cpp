@@ -2,7 +2,7 @@
 
 ## 模块目标
 
-Transport 模块把网络协议请求转换为统一的 `MemoryRuntime` 抽象接口调用，当前包含 RESTful HTTP 和 MCP-over-HTTP 两种传输方式。
+Transport 模块把网络协议请求转换为统一的 `MemoryRuntime` 抽象接口调用，当前包含 RESTful HTTP 和 MCP-over-HTTP 两种传输方式。Transport 源文件只编入 `memory-server` 和 server 测试，不进入 SDK 共享库。
 
 ## 主要文件
 

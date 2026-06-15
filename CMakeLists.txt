@@ -115,7 +115,6 @@ add_library(agent_memory SHARED
     ${AGENT_MEMORY_STORAGE_SOURCES}
     ${AGENT_MEMORY_MODEL_SOURCES}
     ${AGENT_MEMORY_SERIALIZATION_SOURCES}
-    ${AGENT_MEMORY_TRANSPORT_SOURCES}
 )
 
 target_include_directories(agent_memory PUBLIC
@@ -130,8 +129,6 @@ target_include_directories(agent_memory PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/serialization
     ${CMAKE_CURRENT_SOURCE_DIR}/src/storage
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/http
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/mcp
     ${AGENT_MEMORY_THIRD_PARTY_DIR}/include
 )
 target_compile_definitions(agent_memory PRIVATE BUILDING_AGENT_MEMORY)
@@ -158,12 +155,15 @@ if(AGENT_MEMORY_BUILD_TOOLS)
         src/server/server_cli.cpp
         src/server/server_common.cpp
         src/server/server_options.cpp
+        ${AGENT_MEMORY_TRANSPORT_SOURCES}
     )
     agent_memory_apply_common_includes(memory-server)
     target_include_directories(memory-server PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/serialization
         ${CMAKE_CURRENT_SOURCE_DIR}/src/server
         ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/http
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/mcp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
     )
     target_link_libraries(memory-server PRIVATE agent_memory nlohmann_json::nlohmann_json pthread)
@@ -210,11 +210,14 @@ if(AGENT_MEMORY_BUILD_TESTS)
         src/server/server_cli.cpp
         src/server/server_common.cpp
         src/server/server_options.cpp
+        ${AGENT_MEMORY_TRANSPORT_SOURCES}
     )
     target_include_directories(server_tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/serialization
         ${CMAKE_CURRENT_SOURCE_DIR}/src/server
         ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/http
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/mcp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
     )
     target_link_libraries(server_tests PRIVATE nlohmann_json::nlohmann_json pthread)

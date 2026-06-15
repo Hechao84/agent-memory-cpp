@@ -258,7 +258,7 @@ MemoryHttpServer / MemoryMcpProtocol
 
 关键内部接口：
 
-- `MemoryRuntime` 是所有接入层依赖的统一业务接口。
+- `MemoryRuntime` 是所有接入层依赖的统一业务接口；HTTP/MCP Transport 只编入 server target，不编入 SDK 共享库。
 - `MemoryStore` 是所有核心服务依赖的持久化接口。
 - `LongTermMemoryProcessor` 是长期记忆抽取策略接口。
 - `ModelClient` 是模型能力输入接口，可由 runtime 内置模型配置创建，也可由 SDK 宿主显式传入。
