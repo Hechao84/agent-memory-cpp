@@ -7,7 +7,12 @@
 namespace agent_memory {
 
 AnthropicModelClient::AnthropicModelClient(AnthropicModelConfig config)
-    : config_(std::move(config))
+    : config_(std::move(config)), httpClient_()
+{
+}
+
+AnthropicModelClient::AnthropicModelClient(AnthropicModelConfig config, ModelHttpClient httpClient)
+    : config_(std::move(config)), httpClient_(std::move(httpClient))
 {
 }
 
@@ -83,7 +88,7 @@ ModelInvokeResult AnthropicModelClient::GenerateMemoryUpdate(const std::string& 
         headers["anthropic-version"] = config_.anthropicVersion;
     }
 
-    auto response = PostJson({Endpoint(), BuildRequestBody(prompt), config_.timeoutSeconds, headers});
+    auto response = httpClient_.PostJson({Endpoint(), BuildRequestBody(prompt), config_.timeoutSeconds, headers});
     result.httpStatus = response.status;
     if (response.status < 200 || response.status >= 300) {
         result.errorCode = "http_error";

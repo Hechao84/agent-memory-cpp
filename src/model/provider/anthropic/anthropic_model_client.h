@@ -4,6 +4,7 @@
 
 #include "agent_memory/model_client.h"
 #include "model_config.h"
+#include "model_http_client.h"
 
 namespace agent_memory {
 
@@ -16,6 +17,7 @@ class AnthropicModelClient : public ModelClient
 {
 public:
     explicit AnthropicModelClient(AnthropicModelConfig config);
+    AnthropicModelClient(AnthropicModelConfig config, ModelHttpClient httpClient);
     ModelInvokeResult GenerateMemoryUpdate(const std::string& prompt) override;
 
     std::string Endpoint() const;
@@ -24,6 +26,7 @@ public:
 
 private:
     AnthropicModelConfig config_;
+    ModelHttpClient httpClient_;
 };
 
 } // namespace agent_memory

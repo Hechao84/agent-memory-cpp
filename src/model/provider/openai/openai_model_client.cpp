@@ -7,7 +7,12 @@
 namespace agent_memory {
 
 OpenAiModelClient::OpenAiModelClient(OpenAiModelConfig config)
-    : config_(std::move(config))
+    : config_(std::move(config)), httpClient_()
+{
+}
+
+OpenAiModelClient::OpenAiModelClient(OpenAiModelConfig config, ModelHttpClient httpClient)
+    : config_(std::move(config)), httpClient_(std::move(httpClient))
 {
 }
 
@@ -79,7 +84,7 @@ ModelInvokeResult OpenAiModelClient::GenerateMemoryUpdate(const std::string& pro
         headers["OpenAI-Organization"] = config_.organization;
     }
 
-    auto response = PostJson({Endpoint(), BuildRequestBody(prompt), config_.timeoutSeconds, headers});
+    auto response = httpClient_.PostJson({Endpoint(), BuildRequestBody(prompt), config_.timeoutSeconds, headers});
     result.httpStatus = response.status;
     if (response.status < 200 || response.status >= 300) {
         result.errorCode = "http_error";

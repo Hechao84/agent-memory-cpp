@@ -106,6 +106,12 @@ SDK 使用 `MemoryConfig.model` 配置内置模型；Server 模式的顶层 `mod
 - 遍历 `content` 数组。
 - 拼接 `type=text` 块中的 `text` 字段。
 
+## HTTP 调用层
+
+`ModelHttpClient` 是模型 provider 的实例级 HTTP 调用封装。每个 `OpenAiModelClient` / `AnthropicModelClient` 持有自己的 `ModelHttpClient`，默认 transport 使用 libcurl 发送 JSON POST。
+
+测试或内部工厂可以为单个模型实例注入自定义 `JsonPostTransport`，不会影响同进程中的其他模型实例或 runtime。transport 闭包如果共享外部状态，需要由注入方自行保证线程安全。
+
 ## 加载逻辑
 
 `LoadModelClientFromConfig` 和 `LoadModelClientFromJson` 按 `formatType` 创建模型客户端：

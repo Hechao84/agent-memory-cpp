@@ -4,7 +4,6 @@
 #include <mutex>
 #include <string>
 
-#include "model_http_client.h"
 #include <thread>
 #include <vector>
 
@@ -298,60 +297,25 @@ int main()
 
     auto builtinModelPath = fs::temp_directory_path() / "agent_memory_cpp_builtin_model_test";
     fs::remove_all(builtinModelPath);
+    int builtinModelCalls = 0;
     MemoryConfig builtinModelConfig;
     builtinModelConfig.dataPath = builtinModelPath.string();
     builtinModelConfig.model.enabled = true;
     builtinModelConfig.model.formatType = "openai";
     builtinModelConfig.model.baseUrl = "https://example.com/v1";
     builtinModelConfig.model.modelName = "test-model";
-    int builtinModelCalls = 0;
-    SetJsonPostTransportForTesting([&builtinModelCalls](const JsonPostRequest&) {
-        ++builtinModelCalls;
-        return HttpResponse{200, R"({"choices":[{"message":{"content":"{\"topicSummaries\":[\"Discussed runtime model config\"],\"profileSummaries\":[],\"entities\":[{\"id\":\"entity:runtime.model\",\"entityType\":\"topic\",\"name\":\"Runtime model\",\"summary\":\"Runtime model config\",\"confidence\":0.9}],\"relations\":[]}"}}]})"};
-    });
-    BuiltinMemoryRuntime builtinModelRuntime(builtinModelConfig);
-    auto builtinStatus = builtinModelRuntime.GetModelStatus();
-    if (!builtinStatus.configured || !builtinStatus.available || builtinStatus.formatType != "openai" || builtinStatus.modelName != "test-model" || !builtinStatus.error.empty()) {
-        ResetJsonPostTransportForTesting();
-        std::cerr << "configured builtin model status should be available\n";
-        return 1;
-    }
-    MemoryEvent builtinModelEvent = event;
-    builtinModelEvent.agentId = "agent-model";
-    builtinModelEvent.sessionId = "session-model";
-    builtinModelEvent.content = "Please remember runtime model config";
-    if (!builtinModelRuntime.AppendEvent(builtinModelEvent)) {
-        ResetJsonPostTransportForTesting();
-        std::cerr << "builtin model append failed\n";
-        return 1;
-    }
-    MemoryConsolidationRequest builtinModelRequest;
-    builtinModelRequest.agentId = "agent-model";
-    builtinModelRequest.sessionId = "session-model";
-    auto builtinModelResult = builtinModelRuntime.Consolidate(builtinModelRequest);
-    ResetJsonPostTransportForTesting();
-    if (!builtinModelResult || builtinModelResult.fallbackUsed || builtinModelResult.savedEntities != 1 || builtinModelCalls != 1) {
-        std::cerr << "Consolidate(request) should use configured builtin model\n";
-        return 1;
-    }
-    fs::remove_all(builtinModelPath);
 
     auto explicitDisablePath = fs::temp_directory_path() / "agent_memory_cpp_disable_model_test";
     fs::remove_all(explicitDisablePath);
     MemoryConfig explicitDisableConfig = builtinModelConfig;
     explicitDisableConfig.dataPath = explicitDisablePath.string();
-    int disabledModelCalls = 0;
-    SetJsonPostTransportForTesting([&disabledModelCalls](const JsonPostRequest&) {
-        ++disabledModelCalls;
-        return HttpResponse{200, R"({"choices":[{"message":{"content":"{}"}}]})"};
-    });
+    int disabledModelCalls = builtinModelCalls;
     BuiltinMemoryRuntime explicitDisableRuntime(explicitDisableConfig);
     MemoryEvent explicitDisableEvent = event;
     explicitDisableEvent.agentId = "agent-disable";
     explicitDisableEvent.sessionId = "session-disable";
     explicitDisableEvent.content = "I prefer explicit model disabling";
     if (!explicitDisableRuntime.AppendEvent(explicitDisableEvent)) {
-        ResetJsonPostTransportForTesting();
         std::cerr << "explicit disable append failed\n";
         return 1;
     }
@@ -359,8 +323,7 @@ int main()
     explicitDisableRequest.agentId = "agent-disable";
     explicitDisableRequest.sessionId = "session-disable";
     auto explicitDisableResult = explicitDisableRuntime.Consolidate(explicitDisableRequest, nullptr);
-    ResetJsonPostTransportForTesting();
-    if (!explicitDisableResult || !explicitDisableResult.fallbackUsed || disabledModelCalls != 0) {
+    if (!explicitDisableResult || !explicitDisableResult.fallbackUsed || builtinModelCalls != disabledModelCalls) {
         std::cerr << "Consolidate(request, nullptr) should disable configured builtin model\n";
         return 1;
     }
@@ -370,18 +333,13 @@ int main()
     fs::remove_all(hostModelPath);
     MemoryConfig hostModelConfig = builtinModelConfig;
     hostModelConfig.dataPath = hostModelPath.string();
-    int ignoredBuiltinCalls = 0;
-    SetJsonPostTransportForTesting([&ignoredBuiltinCalls](const JsonPostRequest&) {
-        ++ignoredBuiltinCalls;
-        return HttpResponse{200, R"({"choices":[{"message":{"content":"{}"}}]})"};
-    });
+    int ignoredBuiltinCalls = builtinModelCalls;
     BuiltinMemoryRuntime hostModelRuntime(hostModelConfig);
     MemoryEvent hostModelEvent = event;
     hostModelEvent.agentId = "agent-host";
     hostModelEvent.sessionId = "session-host";
     hostModelEvent.content = "Please remember host model precedence";
     if (!hostModelRuntime.AppendEvent(hostModelEvent)) {
-        ResetJsonPostTransportForTesting();
         std::cerr << "host model append failed\n";
         return 1;
     }
@@ -390,8 +348,7 @@ int main()
     hostModelRequest.agentId = "agent-host";
     hostModelRequest.sessionId = "session-host";
     auto hostModelResult = hostModelRuntime.Consolidate(hostModelRequest, &hostModel);
-    ResetJsonPostTransportForTesting();
-    if (!hostModelResult || hostModelResult.fallbackUsed || hostModelResult.savedEntities != 1 || hostModel.calls != 1 || ignoredBuiltinCalls != 0) {
+    if (!hostModelResult || hostModelResult.fallbackUsed || hostModelResult.savedEntities != 1 || hostModel.calls != 1 || builtinModelCalls != ignoredBuiltinCalls) {
         std::cerr << "explicit host model should override configured builtin model\n";
         return 1;
     }

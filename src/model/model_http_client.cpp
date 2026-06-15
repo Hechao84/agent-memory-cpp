@@ -1,48 +1,33 @@
 #include "model_http_client.h"
 
-#include <mutex>
 #include <utility>
 
 namespace agent_memory {
 
-namespace {
-
-std::mutex g_transportMutex;
-JsonPostTransport g_transport;
-CurlClient g_defaultClient;
-
-} // namespace
-
 HttpResponse DefaultPostJson(const JsonPostRequest& request)
 {
+    CurlClient client;
     CurlRequestOptions options;
     options.timeoutSeconds = static_cast<long>(request.timeoutSeconds);
-    return g_defaultClient.Post(request.url, request.body, request.headers, options);
+    return client.Post(request.url, request.body, request.headers, options);
 }
 
-HttpResponse PostJson(const JsonPostRequest& request)
+ModelHttpClient::ModelHttpClient()
+    : transport_(DefaultPostJson)
 {
-    JsonPostTransport transport;
-    {
-        std::lock_guard<std::mutex> lock(g_transportMutex);
-        transport = g_transport;
+}
+
+ModelHttpClient::ModelHttpClient(JsonPostTransport transport)
+    : transport_(std::move(transport))
+{
+    if (!transport_) {
+        transport_ = DefaultPostJson;
     }
-    if (transport) {
-        return transport(request);
-    }
-    return DefaultPostJson(request);
 }
 
-void SetJsonPostTransportForTesting(JsonPostTransport transport)
+HttpResponse ModelHttpClient::PostJson(const JsonPostRequest& request) const
 {
-    std::lock_guard<std::mutex> lock(g_transportMutex);
-    g_transport = std::move(transport);
-}
-
-void ResetJsonPostTransportForTesting()
-{
-    std::lock_guard<std::mutex> lock(g_transportMutex);
-    g_transport = nullptr;
+    return transport_(request);
 }
 
 } // namespace agent_memory

@@ -185,6 +185,11 @@ MemoryModelConfigLoadResult LoadMemoryModelConfigFromJson(const nlohmann::json& 
 
 ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& modelConfig)
 {
+    return LoadModelClientFromConfig(modelConfig, ModelHttpClient());
+}
+
+ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& modelConfig, ModelHttpClient httpClient)
+{
     if (!modelConfig.enabled) {
         return {nullptr, ""};
     }
@@ -195,7 +200,7 @@ ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& modelCo
         if (!validation.error.empty()) {
             return validation;
         }
-        return {std::make_unique<OpenAiModelClient>(std::move(config)), ""};
+        return {std::make_unique<OpenAiModelClient>(std::move(config), std::move(httpClient)), ""};
     }
 
     if (modelConfig.formatType == "anthropic") {
@@ -204,7 +209,7 @@ ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& modelCo
         if (!validation.error.empty()) {
             return validation;
         }
-        return {std::make_unique<AnthropicModelClient>(std::move(config)), ""};
+        return {std::make_unique<AnthropicModelClient>(std::move(config), std::move(httpClient)), ""};
     }
 
     return {nullptr, "unsupported model formatType: " + modelConfig.formatType};

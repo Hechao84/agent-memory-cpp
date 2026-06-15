@@ -20,9 +20,18 @@ struct JsonPostRequest
 
 using JsonPostTransport = std::function<HttpResponse(const JsonPostRequest&)>;
 
-HttpResponse PostJson(const JsonPostRequest& request);
 HttpResponse DefaultPostJson(const JsonPostRequest& request);
-void SetJsonPostTransportForTesting(JsonPostTransport transport);
-void ResetJsonPostTransportForTesting();
+
+class ModelHttpClient
+{
+public:
+    ModelHttpClient();
+    explicit ModelHttpClient(JsonPostTransport transport);
+
+    HttpResponse PostJson(const JsonPostRequest& request) const;
+
+private:
+    JsonPostTransport transport_;
+};
 
 } // namespace agent_memory

@@ -166,7 +166,7 @@ bool TestAnthropicParseResponseBody()
 bool TestInvokeUsesHttpTransport()
 {
     JsonPostRequest captured;
-    SetJsonPostTransportForTesting([&captured](const JsonPostRequest& request) {
+    ModelHttpClient successTransport([&captured](const JsonPostRequest& request) {
         captured = request;
         return HttpResponse{200, R"({"choices":[{"message":{"content":"ok"}}]})"};
     });
@@ -177,41 +177,36 @@ bool TestInvokeUsesHttpTransport()
     config.apiKey = "real-key";
     config.organization = "org-1";
     config.headers["Authorization"] = "Bearer wrong";
-    OpenAiModelClient client(config);
+    OpenAiModelClient client(config, successTransport);
     auto openAiResult = client.GenerateMemoryUpdate("prompt");
     if (!openAiResult || openAiResult.text != "ok") {
-        ResetJsonPostTransportForTesting();
         std::cerr << "openai invoke transport failed\n";
         return false;
     }
-    ResetJsonPostTransportForTesting();
     if (captured.headers["Authorization"] != "Bearer real-key" || captured.headers["OpenAI-Organization"] != "org-1") {
         std::cerr << "openai required headers not applied\n";
         return false;
     }
 
-    SetJsonPostTransportForTesting([](const JsonPostRequest&) {
+    OpenAiModelClient httpErrorClient(config, ModelHttpClient([](const JsonPostRequest&) {
         return HttpResponse{500, R"({"error":"bad"})"};
-    });
-    auto httpError = client.GenerateMemoryUpdate("prompt");
+    }));
+    auto httpError = httpErrorClient.GenerateMemoryUpdate("prompt");
     if (httpError || httpError.httpStatus != 500 || httpError.errorCode != "http_error" || httpError.providerError.empty()) {
-        ResetJsonPostTransportForTesting();
         std::cerr << "openai http error result failed\n";
         return false;
     }
 
-    SetJsonPostTransportForTesting([](const JsonPostRequest&) {
+    OpenAiModelClient parseErrorClient(config, ModelHttpClient([](const JsonPostRequest&) {
         return HttpResponse{200, R"({"choices":[]})"};
-    });
-    auto parseError = client.GenerateMemoryUpdate("prompt");
+    }));
+    auto parseError = parseErrorClient.GenerateMemoryUpdate("prompt");
     if (parseError || parseError.httpStatus != 200 || parseError.errorCode != "parse_error") {
-        ResetJsonPostTransportForTesting();
         std::cerr << "openai parse error result failed\n";
         return false;
     }
-    ResetJsonPostTransportForTesting();
 
-    SetJsonPostTransportForTesting([&captured](const JsonPostRequest& request) {
+    ModelHttpClient anthropicTransport([&captured](const JsonPostRequest& request) {
         captured = request;
         return HttpResponse{200, R"({"content":[{"type":"text","text":"ok"}]})"};
     });
@@ -223,14 +218,12 @@ bool TestInvokeUsesHttpTransport()
     anthropicConfig.anthropicVersion = "2023-06-01";
     anthropicConfig.headers["x-api-key"] = "wrong";
     anthropicConfig.headers["anthropic-version"] = "wrong";
-    AnthropicModelClient anthropic(anthropicConfig);
+    AnthropicModelClient anthropic(anthropicConfig, anthropicTransport);
     auto anthropicResult = anthropic.GenerateMemoryUpdate("prompt");
     if (!anthropicResult || anthropicResult.text != "ok") {
-        ResetJsonPostTransportForTesting();
         std::cerr << "anthropic invoke transport failed\n";
         return false;
     }
-    ResetJsonPostTransportForTesting();
     if (captured.headers["x-api-key"] != "real-key" || captured.headers["anthropic-version"] != "2023-06-01") {
         std::cerr << "anthropic required headers not applied\n";
         return false;
