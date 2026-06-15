@@ -13,7 +13,7 @@ agent-memory-cpp 是一个独立的 C++17 Agent 记忆运行时，目标是为 A
 核心设计目标：
 
 - 本地优先：默认使用 SQLite 和本地文件系统保存记忆数据。
-- 运行时统一：SDK、HTTP、MCP 共用 `BuiltinMemoryRuntime`。
+- 运行时统一：SDK 使用 `BuiltinMemoryRuntime`，HTTP/MCP Transport 依赖 `MemoryRuntime` 抽象接口并由 server 注入内置实现。
 - 可降级：长期记忆抽取可使用外部模型，也可回退到规则抽取。
 - 易集成：公共头文件暴露稳定 C++ 数据结构和运行时接口，服务端暴露 JSON 接口。
 
@@ -29,6 +29,8 @@ agent-memory-cpp 是一个独立的 C++17 Agent 记忆运行时，目标是为 A
               └── MCP-over-HTTP: /mcp
                     │
                     ▼
+              MemoryRuntime
+                    │
             BuiltinMemoryRuntime
                     │
       ┌─────────────┼────────────────┐
@@ -238,20 +240,20 @@ MCP 工具参数与 REST JSON 请求体基本一致。
 
 ```text
 MemoryHttpServer / MemoryMcpProtocol
-  -> BuiltinMemoryRuntime
-     -> ContextBuilder
-        -> MemoryStore
-     -> PayloadService
-        -> MemoryStore
-        -> filesystem
-     -> ConsolidationService
-        -> ConsolidationBatchBuilder
-        -> LlmLongTermMemoryProcessor
-           -> ModelClient
-        -> RuleBasedLongTermMemoryProcessor
-        -> MemoryUpdateWriter
+  -> MemoryRuntime
+     -> BuiltinMemoryRuntime
+        -> ContextBuilder
            -> MemoryStore
-     -> MemoryStore
+        -> PayloadService
+           -> MemoryStore
+           -> filesystem
+        -> ConsolidationService
+           -> ConsolidationBatchBuilder
+           -> LlmLongTermMemoryProcessor
+              -> ModelClient
+           -> RuleBasedLongTermMemoryProcessor
+           -> MemoryUpdateWriter
+              -> MemoryStore
 ```
 
 关键内部接口：
@@ -283,7 +285,7 @@ MemoryHttpServer / MemoryMcpProtocol
 
 SQLite 主要表：
 
-- `memory_events`：事件流。
+- `memory_events`：agent/session 事件流和事件 metadata。
 - `memory_payloads`：payload 引用、agent/session 归属和元数据。
 - `memory_summaries`：会话、主题、画像等摘要。
 - `memory_entities`：长期记忆实体。

@@ -2,7 +2,7 @@
 
 ## 模块目标
 
-Transport 模块把网络协议请求转换为统一的 `BuiltinMemoryRuntime` 调用，当前包含 RESTful HTTP 和 MCP-over-HTTP 两种传输方式。
+Transport 模块把网络协议请求转换为统一的 `MemoryRuntime` 抽象接口调用，当前包含 RESTful HTTP 和 MCP-over-HTTP 两种传输方式。
 
 ## 主要文件
 
@@ -145,6 +145,7 @@ CLI 参数：
 HTTP Client / MCP Client
   -> MemoryHttpServer / MemoryMcpProtocol
   -> json_memory_codec
+  -> MemoryRuntime
   -> BuiltinMemoryRuntime
   -> Core / Storage / Consolidation / Model
 ```

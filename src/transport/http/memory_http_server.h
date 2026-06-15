@@ -9,13 +9,13 @@
 
 namespace agent_memory {
 
-class BuiltinMemoryRuntime;
 class MemoryMcpProtocol;
+class MemoryRuntime;
 
 class MemoryHttpServer
 {
 public:
-    MemoryHttpServer(BuiltinMemoryRuntime& runtime, std::string apiToken = std::string(), bool debugErrors = false,
+    MemoryHttpServer(MemoryRuntime& runtime, std::string apiToken = std::string(), bool debugErrors = false,
                      size_t maxPayloadBytes = 1024 * 1024, std::string mcpPath = "/mcp", size_t maxMcpMessageBytes = 1024 * 1024);
     ~MemoryHttpServer();
     void RegisterRoutes(httplib::Server& server);
@@ -60,7 +60,7 @@ private:
         }
     }
 
-    BuiltinMemoryRuntime& runtime_;
+    MemoryRuntime& runtime_;
     std::string apiToken_;
     bool debugErrors_;
     size_t maxPayloadBytes_;

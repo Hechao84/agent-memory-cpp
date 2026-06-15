@@ -2,12 +2,12 @@
 
 #include <iostream>
 
-#include "agent_memory/builtin_memory_runtime.h"
+#include "agent_memory/runtime.h"
 #include "json_memory_codec.h"
 
 namespace agent_memory {
 
-MemoryMcpProtocol::MemoryMcpProtocol(BuiltinMemoryRuntime& runtime, bool debugErrors)
+MemoryMcpProtocol::MemoryMcpProtocol(MemoryRuntime& runtime, bool debugErrors)
     : runtime_(runtime), debugErrors_(debugErrors)
 {
     InitToolHandlers();

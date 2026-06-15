@@ -3,7 +3,7 @@
 #include <iostream>
 #include <utility>
 
-#include "agent_memory/builtin_memory_runtime.h"
+#include "agent_memory/runtime.h"
 #include "json_memory_codec.h"
 #include "memory_mcp_protocol.h"
 
@@ -25,7 +25,7 @@ bool ConstantTimeEquals(const std::string& lhs, const std::string& rhs)
 
 } // namespace
 
-MemoryHttpServer::MemoryHttpServer(BuiltinMemoryRuntime& runtime, std::string apiToken, bool debugErrors, size_t maxPayloadBytes, std::string mcpPath, size_t maxMcpMessageBytes)
+MemoryHttpServer::MemoryHttpServer(MemoryRuntime& runtime, std::string apiToken, bool debugErrors, size_t maxPayloadBytes, std::string mcpPath, size_t maxMcpMessageBytes)
     : runtime_(runtime), apiToken_(std::move(apiToken)), debugErrors_(debugErrors), maxPayloadBytes_(maxPayloadBytes),
       mcpPath_(std::move(mcpPath)), maxMcpMessageBytes_(maxMcpMessageBytes),
       mcpProtocol_(std::make_unique<MemoryMcpProtocol>(runtime_, debugErrors_))
