@@ -198,12 +198,22 @@ bool TestLongTermMemoryAndSearch()
     bool foundEntity = false;
     bool foundSummary = false;
     for (const auto& result : results) {
+        if (result.score <= 0.0F || result.metadata.value("scoreSource", "") != "fts_bm25") {
+            std::cerr << "search score metadata failed\n";
+            return false;
+        }
         if (result.type == "entity" && result.id == entity.id) {
             foundEntity = true;
         }
         if (result.type == "summary" && result.content.find("Testing strategy") != std::string::npos) {
             foundSummary = true;
         }
+    }
+    search.limit = 1;
+    auto limitedResults = store.SearchLongTermMemory(search);
+    if (limitedResults.size() != 1) {
+        std::cerr << "search limit should apply after merged ranking\n";
+        return false;
     }
     if (!foundEntity || !foundSummary) {
         std::cerr << "long-term search failed\n";

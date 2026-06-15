@@ -175,6 +175,76 @@ int CursorToInt(const std::string& cursor)
     }
 }
 
+struct SearchScoreConfig
+{
+    double summaryWeight{1.0};
+    double entityWeight{0.95};
+    double relationWeight{0.90};
+    double summaryFallbackScore{0.30};
+    double entityFallbackScore{0.25};
+    double relationFallbackScore{0.20};
+};
+
+const SearchScoreConfig& SearchScoring()
+{
+    static const SearchScoreConfig config;
+    return config;
+}
+
+double TypeWeight(const std::string& type)
+{
+    const auto& config = SearchScoring();
+    if (type == "summary") {
+        return config.summaryWeight;
+    }
+    if (type == "entity") {
+        return config.entityWeight;
+    }
+    return config.relationWeight;
+}
+
+double FallbackScore(const std::string& type)
+{
+    const auto& config = SearchScoring();
+    if (type == "summary") {
+        return config.summaryFallbackScore;
+    }
+    if (type == "entity") {
+        return config.entityFallbackScore;
+    }
+    return config.relationFallbackScore;
+}
+
+void ApplyFtsScore(MemorySearchResult& result, double bm25Rank)
+{
+    double rawRank = std::max(0.0, -bm25Rank);
+    double normalized = rawRank > 0.0 ? rawRank / (rawRank + 1.0) : 0.0;
+    double weight = TypeWeight(result.type);
+    result.score = static_cast<float>(normalized * weight);
+    result.metadata["scoreSource"] = "fts_bm25";
+    result.metadata["rawRank"] = rawRank;
+    result.metadata["typeWeight"] = weight;
+}
+
+void ApplyFallbackScore(MemorySearchResult& result)
+{
+    result.score = static_cast<float>(FallbackScore(result.type));
+    result.metadata["scoreSource"] = "like_fallback";
+}
+
+void SortAndLimitSearchResults(std::vector<MemorySearchResult>& results, int limit)
+{
+    std::sort(results.begin(), results.end(), [](const MemorySearchResult& lhs, const MemorySearchResult& rhs) {
+        if (lhs.score != rhs.score) {
+            return lhs.score > rhs.score;
+        }
+        return lhs.id < rhs.id;
+    });
+    if (limit > 0 && static_cast<int>(results.size()) > limit) {
+        results.resize(static_cast<size_t>(limit));
+    }
+}
+
 std::string Fts5EscapeQuery(const std::string& query)
 {
     std::string escaped;
@@ -758,12 +828,12 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
     std::string ftsQuery = Fts5EscapeQuery(request.query);
 
     {
-        const char* sql = "SELECT s.id, s.level, s.topic, s.summary, s.source_refs_json "
+        const char* sql = "SELECT s.id, s.level, s.topic, s.summary, s.source_refs_json, bm25(fts_memory_summaries) AS rank "
                           "FROM memory_summaries s "
                           "JOIN fts_memory_summaries ON fts_memory_summaries.rowid = s.id "
                           "WHERE s.agent_id = ? AND (? = '' OR s.session_id = ?) "
                           "AND fts_memory_summaries MATCH ? "
-                          "ORDER BY s.updated_at DESC, s.id DESC LIMIT ?;";
+                          "ORDER BY rank ASC, s.updated_at DESC, s.id DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
         if (stmt) {
             sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
@@ -771,67 +841,68 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
             sqlite3_bind_text(stmt.get(), 3, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt.get(), 4, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(stmt.get(), 5, limit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW && static_cast<int>(results.size()) < limit) {
+            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
                 MemorySearchResult result;
                 result.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
                 result.type = "summary";
                 result.content = ColumnText(stmt.get(), 1) + ": " +
                                  ColumnText(stmt.get(), 2) + ": " +
                                  ColumnText(stmt.get(), 3);
-                result.score = 1.0F;
                 result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+                ApplyFtsScore(result, sqlite3_column_double(stmt.get(), 5));
                 results.push_back(std::move(result));
             }
         }
     }
 
     {
-        const char* sql = "SELECT e.id, e.agent_id, e.type, e.name, e.summary, e.source_refs_json, e.metadata_json "
+        const char* sql = "SELECT e.id, e.agent_id, e.type, e.name, e.summary, e.source_refs_json, e.metadata_json, bm25(fts_memory_entities) AS rank "
                           "FROM memory_entities e "
                           "JOIN fts_memory_entities ON fts_memory_entities.rowid = e.rowid "
                           "WHERE e.active = 1 AND e.agent_id = ? "
                           "AND fts_memory_entities MATCH ? "
-                          "ORDER BY e.updated_at DESC LIMIT ?;";
+                          "ORDER BY rank ASC, e.updated_at DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
         if (stmt) {
             sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(stmt.get(), 3, limit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW && static_cast<int>(results.size()) < limit) {
+            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
                 MemorySearchResult result;
                 result.id = ColumnText(stmt.get(), 0);
                 result.type = "entity";
                 result.content = ColumnText(stmt.get(), 2) + ": " +
                                  ColumnText(stmt.get(), 3) + ": " +
                                  ColumnText(stmt.get(), 4);
-                result.score = 0.9F;
                 result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
+                result.metadata = ParseJsonColumn(stmt.get(), 6);
+                ApplyFtsScore(result, sqlite3_column_double(stmt.get(), 7));
                 results.push_back(std::move(result));
             }
         }
     }
 
     {
-        const char* sql = "SELECT r.id, r.from_entity, r.relation, r.to_entity, r.source_refs_json "
+        const char* sql = "SELECT r.id, r.from_entity, r.relation, r.to_entity, r.source_refs_json, bm25(fts_memory_relations) AS rank "
                           "FROM memory_relations r "
                           "JOIN fts_memory_relations ON fts_memory_relations.rowid = r.id "
                           "WHERE r.active = 1 AND r.agent_id = ? "
                           "AND fts_memory_relations MATCH ? "
-                          "ORDER BY r.updated_at DESC, r.id DESC LIMIT ?;";
+                          "ORDER BY rank ASC, r.updated_at DESC, r.id DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
         if (stmt) {
             sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(stmt.get(), 3, limit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW && static_cast<int>(results.size()) < limit) {
+            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
                 MemorySearchResult result;
                 result.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
                 result.type = "relation";
                 result.content = ColumnText(stmt.get(), 1) + " " +
                                  ColumnText(stmt.get(), 2) + " " +
                                  ColumnText(stmt.get(), 3);
-                result.score = 0.8F;
                 result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+                ApplyFtsScore(result, sqlite3_column_double(stmt.get(), 5));
                 results.push_back(std::move(result));
             }
         }
@@ -852,15 +923,15 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                 sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(stmt.get(), 5, pattern.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(stmt.get(), 6, limit);
-                while (sqlite3_step(stmt.get()) == SQLITE_ROW && static_cast<int>(results.size()) < limit) {
+                while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
                     MemorySearchResult result;
                     result.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
                     result.type = "summary";
                     result.content = ColumnText(stmt.get(), 1) + ": " +
                                      ColumnText(stmt.get(), 2) + ": " +
                                      ColumnText(stmt.get(), 3);
-                    result.score = 1.0F;
                     result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+                    ApplyFallbackScore(result);
                     results.push_back(std::move(result));
                 }
             }
@@ -878,15 +949,16 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                 sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(stmt.get(), 5, pattern.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(stmt.get(), 6, limit);
-                while (sqlite3_step(stmt.get()) == SQLITE_ROW && static_cast<int>(results.size()) < limit) {
+                while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
                     MemorySearchResult result;
                     result.id = ColumnText(stmt.get(), 0);
                     result.type = "entity";
                     result.content = ColumnText(stmt.get(), 2) + ": " +
                                      ColumnText(stmt.get(), 3) + ": " +
                                      ColumnText(stmt.get(), 4);
-                    result.score = 0.9F;
                     result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
+                    result.metadata = ParseJsonColumn(stmt.get(), 6);
+                    ApplyFallbackScore(result);
                     results.push_back(std::move(result));
                 }
             }
@@ -903,21 +975,22 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                 sqlite3_bind_text(stmt.get(), 3, pattern.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int(stmt.get(), 5, limit);
-                while (sqlite3_step(stmt.get()) == SQLITE_ROW && static_cast<int>(results.size()) < limit) {
+                while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
                     MemorySearchResult result;
                     result.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
                     result.type = "relation";
                     result.content = ColumnText(stmt.get(), 2) + " " +
                                      ColumnText(stmt.get(), 3) + " " +
                                      ColumnText(stmt.get(), 4);
-                    result.score = 0.8F;
                     result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
+                    ApplyFallbackScore(result);
                     results.push_back(std::move(result));
                 }
             }
         }
     }
 
+    SortAndLimitSearchResults(results, limit);
     return results;
 }
 

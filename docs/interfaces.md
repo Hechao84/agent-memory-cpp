@@ -157,7 +157,7 @@ SDK 初始化参数。
 | `id` | string | 结果 ID |
 | `type` | string | `summary`、`entity`、`relation` 等 |
 | `content` | string | 结果内容 |
-| `score` | number | 相关性分数 |
+| `score` | number | 相关性分数，越大越相关；具体计算算法属于实现细节，可能随版本优化 |
 | `sourceRefs` | string[] | 来源引用 |
 | `metadata` | object | 扩展元数据 |
 

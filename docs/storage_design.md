@@ -65,6 +65,10 @@ SQLite 初始化时创建以下主要索引：
 - entities：type、name、summary。
 - relations：from_entity、relation、to_entity。
 
+FTS 命中使用 SQLite FTS5 `bm25()` 计算相关性，并通过内部 `SearchScoreConfig` 施加 summary/entity/relation 类型权重。不同类型的候选会合并后按 `score` 全局排序，再按 `limit` 截断。LIKE fallback 仅在 FTS 无结果时使用较低固定分数。
+
+`score` 的稳定语义是“越大越相关”；具体算法和权重属于内部实现，后续可继续调优而不改变 SDK/REST/MCP 接口。
+
 返回统一的 `MemorySearchResult`：
 
 - `id`
