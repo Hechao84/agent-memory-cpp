@@ -36,9 +36,7 @@ Core Runtime 是项目的运行时编排层，负责把事件、上下文、载�
 `BuiltinMemoryRuntimeImpl` 持有：
 
 - `RuntimeServices services`：Store、PayloadService、ContextBuilder、ConsolidationService、内置 ModelClient 等。
-- `events`：运行时内存事件快照。
-- `payloads`：运行时内存 payload 引用快照。
-- `mutex`：保护内部状态。
+- `mutex`：保护服务指针和少量运行时状态。
 - `consolidationMutex`：串行化长期记忆沉淀。
 - `lastRuntimeError`：最近运行时错误。
 
@@ -59,21 +57,24 @@ CreateRuntimeServices
 
 ### AppendEvent
 
-1. 写入内存事件快照。
+1. 获取 `MemoryStore`。
 2. 调用 `MemoryStore::SaveEvent` 持久化。
 3. 保存失败时返回 `event_persist_failed`。
 
+Store 是事件的单一事实来源，Runtime 不再维护事件内存快照。
+
 ### BuildContext
 
-1. 获取 `ContextBuilder` 和 payload 快照。
+1. 获取 `ContextBuilder`。
 2. 调用 `ContextBuilder::BuildContext`。
-3. 返回 `MemoryContextPackage`。
+3. `ContextBuilder` 从 Store 按 agent/session 读取事件、payload 和长期记忆。
+4. 返回 `MemoryContextPackage`。
 
 ### WritePayload
 
 1. 获取 `PayloadService`。
 2. 按配置判断是否卸载。
-3. 如果卸载成功，将 `MemoryPayloadRef` 写入内存快照和 Store。
+3. 如果卸载成功，将 payload 文件写入本地文件系统，并通过 Store 保存 `MemoryPayloadRef`。
 
 ### Consolidate
 

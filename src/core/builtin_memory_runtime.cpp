@@ -16,8 +16,6 @@ namespace agent_memory {
 
 struct BuiltinMemoryRuntimeImpl
 {
-    std::vector<MemoryEvent> events;
-    std::vector<MemoryPayloadRef> payloads;
     std::unique_ptr<RuntimeServices> services;
     std::string lastRuntimeError;
     mutable std::mutex mutex;
@@ -70,7 +68,6 @@ MemoryOperationResult BuiltinMemoryRuntime::AppendEvent(const MemoryEvent& event
     MemoryStore* store = nullptr;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
-        impl_->events.push_back(event);
         store = impl_->services->store.get();
     }
     if (store == nullptr) {
@@ -89,26 +86,22 @@ MemoryOperationResult BuiltinMemoryRuntime::AppendEvent(const MemoryEvent& event
 MemoryContextResult BuiltinMemoryRuntime::BuildContext(const MemoryContextRequest& request)
 {
     ContextBuilder* contextBuilder = nullptr;
-    std::vector<MemoryPayloadRef> payloadSnapshot;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         contextBuilder = impl_->services->contextBuilder.get();
-        payloadSnapshot = impl_->payloads;
     }
     if (contextBuilder == nullptr) {
         return {false, {}, {"context_build_failed", "context builder unavailable", "", false}};
     }
-    return {true, contextBuilder->BuildContext(request, payloadSnapshot), {}};
+    return {true, contextBuilder->BuildContext(request), {}};
 }
 
 MemoryPayloadWriteResult BuiltinMemoryRuntime::WritePayload(const MemoryPayloadWriteRequest& request)
 {
     PayloadService* payloadService = nullptr;
-    int eventCount = 0;
     {
         std::lock_guard<std::mutex> lock(impl_->mutex);
         payloadService = impl_->services->payloadService.get();
-        eventCount = static_cast<int>(impl_->events.size());
     }
     if (payloadService == nullptr) {
         MemoryPayloadWriteResult result;
@@ -117,12 +110,7 @@ MemoryPayloadWriteResult BuiltinMemoryRuntime::WritePayload(const MemoryPayloadW
         return result;
     }
 
-    MemoryPayloadWriteResult result = payloadService->WritePayload(request, eventCount);
-    if (result.offloaded) {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        impl_->payloads.push_back(result.payload);
-    }
-    return result;
+    return payloadService->WritePayload(request);
 }
 
 MemoryPayloadReadResult BuiltinMemoryRuntime::ReadPayload(const std::string& uri)
@@ -181,21 +169,15 @@ MemorySearchResponse BuiltinMemoryRuntime::SearchMemory(const MemorySearchReques
 
 MemoryStatsResult BuiltinMemoryRuntime::GetStats() const
 {
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    MemoryStats stats;
-    if (impl_->services->store) {
-        MemoryStats storeStats = impl_->services->store->GetStoreStats();
-        stats.events = storeStats.events;
-        stats.payloads = storeStats.payloads;
-        stats.summaries = storeStats.summaries;
-        stats.entities = storeStats.entities;
-        stats.relations = storeStats.relations;
-        stats.metadata = storeStats.metadata;
-    } else {
-        stats.events = static_cast<int>(impl_->events.size());
-        stats.payloads = static_cast<int>(impl_->payloads.size());
+    MemoryStore* store = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        store = impl_->services->store.get();
     }
-    return {true, stats, {}};
+    if (store == nullptr) {
+        return {false, {}, {"stats_unavailable", "memory store unavailable", "", false}};
+    }
+    return {true, store->GetStoreStats(), {}};
 }
 
 } // namespace agent_memory

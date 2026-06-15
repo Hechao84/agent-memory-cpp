@@ -124,8 +124,7 @@ ContextBuilder::ContextBuilder(const MemoryConfig& config, MemoryStore* store)
 {
 }
 
-MemoryContextPackage ContextBuilder::BuildContext(const MemoryContextRequest& request,
-                                                  const std::vector<MemoryPayloadRef>& payloads) const
+MemoryContextPackage ContextBuilder::BuildContext(const MemoryContextRequest& request) const
 {
     MemoryContextPackage result;
     if (ShouldInclude(request, context_sections::Messages)) {
@@ -162,7 +161,7 @@ MemoryContextPackage ContextBuilder::BuildContext(const MemoryContextRequest& re
     result.metadata["relation_count"] = result.relations.size();
 
     if (ShouldInclude(request, context_sections::Payloads)) {
-        std::vector<MemoryPayloadRef> selectedPayloads = LoadPayloadsForContext(payloads, request);
+        std::vector<MemoryPayloadRef> selectedPayloads = LoadPayloadsForContext(request);
         if (!selectedPayloads.empty()) {
             std::stringstream payloadOverview;
             if (!result.memoryText.empty()) {
@@ -275,36 +274,22 @@ std::vector<MemoryMessage> ContextBuilder::LoadMessagesForContext(const MemoryCo
     return messages;
 }
 
-std::vector<MemoryPayloadRef> ContextBuilder::LoadPayloadsForContext(const std::vector<MemoryPayloadRef>& payloads,
-                                                                        const MemoryContextRequest& request) const
+std::vector<MemoryPayloadRef> ContextBuilder::LoadPayloadsForContext(const MemoryContextRequest& request) const
 {
     int limit = std::max(0, MetadataInt(request.metadata, "payload_limit", 20));
-    if (limit == 0) {
+    if (limit == 0 || store_ == nullptr) {
         return {};
     }
 
     std::vector<MemoryPayloadRef> combined;
     std::set<std::string> seen;
-    for (const auto& payload : payloads) {
-        if (payload.agentId != request.agentId || (!request.sessionId.empty() && payload.sessionId != request.sessionId)) {
-            continue;
-        }
+    for (const auto& payload : store_->LoadRecentPayloads(request.agentId, request.sessionId, limit)) {
         if (!seen.insert(payload.uri).second || !MatchesQuery(payload, request.query)) {
             continue;
         }
         combined.push_back(payload);
-    }
-
-    if (store_ != nullptr && (limit <= 0 || static_cast<int>(combined.size()) < limit)) {
-        int remaining = limit > 0 ? limit - static_cast<int>(combined.size()) : limit;
-        for (const auto& payload : store_->LoadRecentPayloads(request.agentId, request.sessionId, remaining)) {
-            if (!seen.insert(payload.uri).second || !MatchesQuery(payload, request.query)) {
-                continue;
-            }
-            combined.push_back(payload);
-            if (limit > 0 && static_cast<int>(combined.size()) >= limit) {
-                break;
-            }
+        if (limit > 0 && static_cast<int>(combined.size()) >= limit) {
+            break;
         }
     }
 

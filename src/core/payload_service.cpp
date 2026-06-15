@@ -1,9 +1,9 @@
 #include "payload_service.h"
 
-#include <chrono>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <sstream>
 #include <utility>
 
@@ -24,7 +24,7 @@ PayloadService::PayloadService(const MemoryConfig& config, std::string dataPath,
     }
 }
 
-MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRequest& request, int eventCount)
+MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRequest& request)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     ClearLastError();
@@ -39,7 +39,7 @@ MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRe
         return result;
     }
 
-    std::string ref = BuildPayloadRef(request, eventCount);
+    std::string ref = BuildPayloadRef(request);
     fs::path payloadPath = fs::path(PayloadDirectory()) / (ref + ".txt");
     std::error_code error;
     fs::create_directories(payloadPath.parent_path(), error);
@@ -109,18 +109,21 @@ std::string PayloadService::ReadPayload(const std::string& ref) const
     return content;
 }
 
-std::string PayloadService::BuildPayloadRef(const MemoryPayloadWriteRequest& request, int eventCount) const
+std::string PayloadService::BuildPayloadRef(const MemoryPayloadWriteRequest& request) const
 {
+    thread_local std::mt19937_64 generator(std::random_device{}());
+    std::uniform_int_distribution<unsigned long long> distribution;
+    std::stringstream ref;
     std::string sessionId = request.sessionId.empty() ? "default" : request.sessionId;
-    std::string toolCallId = request.toolCallId.empty() ? std::to_string(eventCount + 1) : request.toolCallId;
-    auto now = std::chrono::steady_clock::now().time_since_epoch().count();
-    std::string ref = sessionId + "_" + toolCallId + "_" + std::to_string(eventCount + 1) + "_" + std::to_string(now);
-    for (char& ch : ref) {
+    std::string toolCallId = request.toolCallId.empty() ? "payload" : request.toolCallId;
+    ref << sessionId << "_" << toolCallId << "_" << std::hex << distribution(generator) << distribution(generator);
+    std::string value = ref.str();
+    for (char& ch : value) {
         if (!std::isalnum(static_cast<unsigned char>(ch)) && ch != '_' && ch != '-') {
             ch = '_';
         }
     }
-    return ref;
+    return value;
 }
 
 std::string PayloadService::BuildPayloadSummary(const MemoryPayloadWriteRequest& request) const

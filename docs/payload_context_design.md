@@ -17,10 +17,11 @@ Payload 模块处理大文本工具结果的卸载、引用和读取。Context �
 ### 写入流程
 
 ```text
-WritePayload(request, eventCount)
+WritePayload(request)
   -> 未启用 offload：返回原 content
   -> content 为空：返回原 content
   -> content 长度小于 offloadThresholdChars：返回原 content
+  -> 生成随机唯一 payload ref
   -> 创建 payload 文件
   -> 生成 file:// URI
   -> 保存 MemoryPayloadRef
@@ -108,8 +109,8 @@ Tool result offloaded from <toolName>, original chars: <n>.
 
 ### payload 选择
 
-- 先使用运行时内存中的 payload 快照，并按 `agentId/sessionId` 过滤。
-- 再从 Store 中加载当前 `agentId/sessionId` 范围内的最近 payload。
+- 从 Store 中加载当前 `agentId/sessionId` 范围内的最近 payload。
+- Store 是 payload 引用的单一事实来源，Runtime 不再维护 payload 内存快照。
 - 使用 `query` 对 uri、toolName、summary、contentType 做大小写不敏感过滤。
 
 ## 与其他模块关系

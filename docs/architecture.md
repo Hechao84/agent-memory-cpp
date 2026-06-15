@@ -266,7 +266,7 @@ MemoryHttpServer / MemoryMcpProtocol
 
 ## 运行时与并发模型
 
-- `BuiltinMemoryRuntime` 使用互斥锁保护内部内存快照和服务访问。
+- `BuiltinMemoryRuntime` 使用互斥锁保护服务指针和少量运行时状态；事件和 payload 引用以 Store 为单一事实来源。
 - `Consolidate` 使用独立的 `consolidationMutex` 串行化同一运行时内的长期记忆沉淀，避免游标并发写入冲突。
 - `MemorySqliteStore` 使用递归互斥锁保护 SQLite 连接访问。
 - `memory-server` 可通过 `server.http.threadCount` 配置 cpp-httplib 线程池。
@@ -280,7 +280,7 @@ MemoryHttpServer / MemoryMcpProtocol
   memory_runtime/
     memory.db
     payloads/
-      <session>_<toolCall>_<event>_<timestamp>.txt
+      <session>_<toolCall>_<random>.txt
 ```
 
 SQLite 主要表：

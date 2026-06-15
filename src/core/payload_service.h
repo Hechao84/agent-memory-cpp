@@ -15,12 +15,12 @@ class PayloadService
 public:
     PayloadService(const MemoryConfig& config, std::string dataPath, MemoryStore* store);
 
-    MemoryPayloadWriteResult WritePayload(const MemoryPayloadWriteRequest& request, int eventCount);
+    MemoryPayloadWriteResult WritePayload(const MemoryPayloadWriteRequest& request);
     std::string ReadPayload(const std::string& ref) const;
     std::string LastError() const;
 
 private:
-    std::string BuildPayloadRef(const MemoryPayloadWriteRequest& request, int eventCount) const;
+    std::string BuildPayloadRef(const MemoryPayloadWriteRequest& request) const;
     std::string BuildPayloadSummary(const MemoryPayloadWriteRequest& request) const;
     std::string PayloadDirectory() const;
     void SetLastError(const std::string& error) const;
