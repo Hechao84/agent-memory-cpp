@@ -25,7 +25,7 @@ public:
     bool Initialize() override;
     bool SaveEvent(const MemoryEvent& event) override;
     bool SavePayload(const MemoryPayloadRef& payload) override;
-    std::vector<MemoryPayloadRef> LoadRecentPayloads(int limit) const override;
+    std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const override;
     bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
                      const std::string& topic, const std::string& summary, float confidence,
                      const std::vector<std::string>& sourceRefs = {}) override;

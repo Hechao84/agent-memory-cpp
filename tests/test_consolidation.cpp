@@ -97,12 +97,19 @@ public:
         return result;
     }
     LongTermMemorySnapshot LoadLongTermMemory(const std::string&, int, const std::string&) const override { return {}; }
-    std::vector<MemoryPayloadRef> LoadRecentPayloads(int limit) const override
+    std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const override
     {
-        if (limit <= 0 || static_cast<int>(payloads.size()) <= limit) {
-            return payloads;
+        std::vector<MemoryPayloadRef> result;
+        for (const auto& payload : payloads) {
+            if (payload.agentId != agentId || (!sessionId.empty() && payload.sessionId != sessionId)) {
+                continue;
+            }
+            result.push_back(payload);
         }
-        return std::vector<MemoryPayloadRef>(payloads.end() - limit, payloads.end());
+        if (limit <= 0 || static_cast<int>(result.size()) <= limit) {
+            return result;
+        }
+        return std::vector<MemoryPayloadRef>(result.end() - limit, result.end());
     }
     std::vector<MemorySearchResult> SearchLongTermMemory(const MemorySearchRequest&) const override { return {}; }
     MemoryStats GetStoreStats() const override

@@ -114,13 +114,24 @@ int main()
     payloadRequest.toolName = "test_tool";
 
     auto payloadResult = runtime.WritePayload(payloadRequest);
-    if (!payloadResult.offloaded || runtime.ReadPayload(payloadResult.payload.uri).content != payloadRequest.content) {
+    if (!payloadResult.offloaded || runtime.ReadPayload(payloadResult.payload.uri).content != payloadRequest.content ||
+        payloadResult.payload.agentId != "agent-1" || payloadResult.payload.sessionId != "session-1") {
         std::cerr << "payload offload failed\n";
         return 1;
     }
     auto duplicatePayloadResult = runtime.WritePayload(payloadRequest);
     if (!duplicatePayloadResult.offloaded || duplicatePayloadResult.payload.uri == payloadResult.payload.uri) {
         std::cerr << "duplicate payload refs should not collide\n";
+        return 1;
+    }
+    auto otherPayloadRequest = payloadRequest;
+    otherPayloadRequest.agentId = "agent-2";
+    otherPayloadRequest.sessionId = "session-2";
+    otherPayloadRequest.toolCallId = "tool-2";
+    otherPayloadRequest.content = "abcdefghijklmnopqrstuv";
+    auto otherPayloadResult = runtime.WritePayload(otherPayloadRequest);
+    if (!otherPayloadResult.offloaded || otherPayloadResult.payload.agentId != "agent-2" || otherPayloadResult.payload.sessionId != "session-2") {
+        std::cerr << "payload ownership fields failed\n";
         return 1;
     }
     auto badPayloadRead = runtime.ReadPayload("file:///etc/passwd");
@@ -226,6 +237,12 @@ int main()
         !payloadsOnlyContext.context.entities.empty()) {
         std::cerr << "BuildContext include sections failed for payloads-only request\n";
         return 1;
+    }
+    for (const auto& payload : payloadsOnlyContext.context.payloadRefs) {
+        if (payload.agentId != "agent-1" || payload.sessionId != "session-1" || payload.uri == otherPayloadResult.payload.uri) {
+            std::cerr << "BuildContext payload ownership filter failed\n";
+            return 1;
+        }
     }
     auto longTermOnlyRequest = contextRequest;
     longTermOnlyRequest.includeSections = {"long_term"};

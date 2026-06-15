@@ -286,6 +286,9 @@ std::vector<MemoryPayloadRef> ContextBuilder::LoadPayloadsForContext(const std::
     std::vector<MemoryPayloadRef> combined;
     std::set<std::string> seen;
     for (const auto& payload : payloads) {
+        if (payload.agentId != request.agentId || (!request.sessionId.empty() && payload.sessionId != request.sessionId)) {
+            continue;
+        }
         if (!seen.insert(payload.uri).second || !MatchesQuery(payload, request.query)) {
             continue;
         }
@@ -294,7 +297,7 @@ std::vector<MemoryPayloadRef> ContextBuilder::LoadPayloadsForContext(const std::
 
     if (store_ != nullptr && (limit <= 0 || static_cast<int>(combined.size()) < limit)) {
         int remaining = limit > 0 ? limit - static_cast<int>(combined.size()) : limit;
-        for (const auto& payload : store_->LoadRecentPayloads(remaining)) {
+        for (const auto& payload : store_->LoadRecentPayloads(request.agentId, request.sessionId, remaining)) {
             if (!seen.insert(payload.uri).second || !MatchesQuery(payload, request.query)) {
                 continue;
             }

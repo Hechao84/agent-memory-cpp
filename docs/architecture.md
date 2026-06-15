@@ -284,7 +284,7 @@ MemoryHttpServer / MemoryMcpProtocol
 SQLite 主要表：
 
 - `memory_events`：事件流。
-- `memory_payloads`：payload 引用和元数据。
+- `memory_payloads`：payload 引用、agent/session 归属和元数据。
 - `memory_summaries`：会话、主题、画像等摘要。
 - `memory_entities`：长期记忆实体。
 - `memory_relations`：实体关系。

@@ -104,6 +104,8 @@ bool TestPayloads()
     }
 
     MemoryPayloadRef first;
+    first.agentId = "agent-1";
+    first.sessionId = "session-1";
     first.uri = "file://payload-1.txt";
     first.contentType = "text/plain";
     first.summary = "first payload";
@@ -111,6 +113,8 @@ bool TestPayloads()
     first.originalChars = 10;
 
     MemoryPayloadRef second;
+    second.agentId = "agent-1";
+    second.sessionId = "session-1";
     second.uri = "file://payload-2.txt";
     second.contentType = "text/plain";
     second.summary = "second payload";
@@ -122,13 +126,13 @@ bool TestPayloads()
         return false;
     }
 
-    auto recent = store.LoadRecentPayloads(1);
-    if (recent.size() != 1 || recent[0].uri != second.uri) {
+    auto recent = store.LoadRecentPayloads("agent-1", "session-1", 1);
+    if (recent.size() != 1 || recent[0].uri != second.uri || recent[0].agentId != "agent-1" || recent[0].sessionId != "session-1") {
         std::cerr << "recent payload limit failed\n";
         return false;
     }
 
-    auto all = store.LoadRecentPayloads(0);
+    auto all = store.LoadRecentPayloads("agent-1", "", 0);
     if (all.size() != 2) {
         std::cerr << "recent payload all failed\n";
         return false;

@@ -11,6 +11,8 @@ namespace agent_memory {
 
 struct AGENT_MEMORY_API MemoryPayloadRef
 {
+    std::string agentId;
+    std::string sessionId;
     std::string uri;
     std::string contentType;
     std::string summary;

@@ -338,7 +338,9 @@ MemoryMessage MessageFromJson(const nlohmann::json& j)
 
 nlohmann::json PayloadRefToJson(const MemoryPayloadRef& payload)
 {
-    return {{"uri", payload.uri},
+    return {{"agentId", payload.agentId},
+            {"sessionId", payload.sessionId},
+            {"uri", payload.uri},
             {"contentType", payload.contentType},
             {"summary", payload.summary},
             {"toolName", payload.toolName},
@@ -350,6 +352,8 @@ nlohmann::json PayloadRefToJson(const MemoryPayloadRef& payload)
 MemoryPayloadRef PayloadRefFromJson(const nlohmann::json& j)
 {
     MemoryPayloadRef payload;
+    payload.agentId = JsonString(j, "agentId");
+    payload.sessionId = JsonString(j, "sessionId");
     payload.uri = JsonString(j, "uri");
     payload.contentType = JsonString(j, "contentType");
     payload.summary = JsonString(j, "summary");

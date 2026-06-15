@@ -36,7 +36,7 @@ public:
     virtual bool Initialize() = 0;
     virtual bool SaveEvent(const MemoryEvent& event) = 0;
     virtual bool SavePayload(const MemoryPayloadRef& payload) = 0;
-    virtual std::vector<MemoryPayloadRef> LoadRecentPayloads(int limit) const = 0;
+    virtual std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const = 0;
     virtual bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
                              const std::string& topic, const std::string& summary, float confidence,
                              const std::vector<std::string>& sourceRefs = {}) = 0;

@@ -38,7 +38,7 @@ Storage 模块负责记忆数据的持久化和检索，为运行时提供统一
 | 表 | 说明 |
 | --- | --- |
 | `memory_events` | 保存 agent/session 事件流 |
-| `memory_payloads` | 保存 payload URI、类型、摘要和元数据 |
+| `memory_payloads` | 保存 agent/session 归属、payload URI、类型、摘要和元数据 |
 | `memory_summaries` | 保存会话、主题、画像等摘要 |
 | `memory_entities` | 保存长期记忆实体 |
 | `memory_relations` | 保存实体间关系 |
@@ -52,7 +52,7 @@ Storage 模块负责记忆数据的持久化和检索，为运行时提供统一
 SQLite 初始化时创建以下主要索引：
 
 - `idx_events_agent_session_id`：按 agent/session/id 读取事件。
-- `idx_payloads_created_at`：按创建时间读取最近 payload。
+- `idx_payloads_agent_session_created`：按 agent/session/created_at 读取最近 payload。
 - `idx_summaries_agent_session_updated`：按 agent/session/updated_at 读取摘要。
 - `idx_entities_agent_active`：读取 active 实体。
 - `idx_relations_agent_active`、`idx_relations_active`：读取 active 关系。

@@ -277,6 +277,8 @@ bool MemorySqliteStore::Initialize()
                    ");") &&
            ExecuteUnlocked("CREATE TABLE IF NOT EXISTS memory_payloads ("
                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                   "agent_id TEXT, "
+                   "session_id TEXT, "
                    "ref TEXT UNIQUE, "
                    "content_type TEXT, "
                    "tool_name TEXT, "
@@ -331,7 +333,7 @@ bool MemorySqliteStore::Initialize()
                     "PRIMARY KEY(agent_id, session_id)"
                     ");") &&
             ExecuteUnlocked("CREATE INDEX IF NOT EXISTS idx_events_agent_session_id ON memory_events(agent_id, session_id, id);") &&
-            ExecuteUnlocked("CREATE INDEX IF NOT EXISTS idx_payloads_created_at ON memory_payloads(created_at, id);") &&
+            ExecuteUnlocked("CREATE INDEX IF NOT EXISTS idx_payloads_agent_session_created ON memory_payloads(agent_id, session_id, created_at, id);") &&
             ExecuteUnlocked("CREATE INDEX IF NOT EXISTS idx_summaries_agent_session_updated ON memory_summaries(agent_id, session_id, updated_at, id);") &&
             ExecuteUnlocked("CREATE INDEX IF NOT EXISTS idx_entities_agent_active ON memory_entities(agent_id, active);") &&
             ExecuteUnlocked("CREATE INDEX IF NOT EXISTS idx_relations_agent_active ON memory_relations(agent_id, active);") &&
@@ -427,7 +429,7 @@ bool MemorySqliteStore::SavePayload(const MemoryPayloadRef& payload)
     return SavePayloadUnlocked(payload);
 }
 
-std::vector<MemoryPayloadRef> MemorySqliteStore::LoadRecentPayloads(int limit) const
+std::vector<MemoryPayloadRef> MemorySqliteStore::LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     std::vector<MemoryPayloadRef> payloads;
@@ -435,23 +437,29 @@ std::vector<MemoryPayloadRef> MemorySqliteStore::LoadRecentPayloads(int limit) c
         return payloads;
     }
 
-    const char* sql = "SELECT ref, content_type, tool_name, summary, original_chars, created_at "
-                      "FROM memory_payloads ORDER BY created_at DESC, id DESC LIMIT ?;";
+    const char* sql = "SELECT agent_id, session_id, ref, content_type, tool_name, summary, original_chars, created_at "
+                      "FROM memory_payloads WHERE agent_id = ? AND (? = '' OR session_id = ?) "
+                      "ORDER BY created_at DESC, id DESC LIMIT ?;";
     SQLiteStatement stmt(db_, sql);
     if (!stmt) {
         LogSqliteError(db_, "LoadRecentPayloads::prepare");
         return payloads;
     }
 
-    sqlite3_bind_int(stmt.get(), 1, limit > 0 ? limit : 20);
+    sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 4, limit > 0 ? limit : 20);
     while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
         MemoryPayloadRef payload;
-        payload.uri = ColumnText(stmt.get(), 0);
-        payload.contentType = ColumnText(stmt.get(), 1);
-        payload.toolName = ColumnText(stmt.get(), 2);
-        payload.summary = ColumnText(stmt.get(), 3);
-        payload.originalChars = sqlite3_column_int(stmt.get(), 4);
-        payload.createdAt = ColumnText(stmt.get(), 5);
+        payload.agentId = ColumnText(stmt.get(), 0);
+        payload.sessionId = ColumnText(stmt.get(), 1);
+        payload.uri = ColumnText(stmt.get(), 2);
+        payload.contentType = ColumnText(stmt.get(), 3);
+        payload.toolName = ColumnText(stmt.get(), 4);
+        payload.summary = ColumnText(stmt.get(), 5);
+        payload.originalChars = sqlite3_column_int(stmt.get(), 6);
+        payload.createdAt = ColumnText(stmt.get(), 7);
         payloads.push_back(std::move(payload));
     }
     return payloads;
@@ -997,9 +1005,11 @@ bool MemorySqliteStore::SaveEventUnlocked(const MemoryEvent& event)
 bool MemorySqliteStore::SavePayloadUnlocked(const MemoryPayloadRef& payload)
 {
     const char* sql = "INSERT INTO memory_payloads "
-                      "(ref, content_type, tool_name, summary, original_chars) "
-                      "VALUES (?, ?, ?, ?, ?) "
+                      "(agent_id, session_id, ref, content_type, tool_name, summary, original_chars) "
+                      "VALUES (?, ?, ?, ?, ?, ?, ?) "
                       "ON CONFLICT(ref) DO UPDATE SET "
+                      "agent_id = excluded.agent_id, "
+                      "session_id = excluded.session_id, "
                       "content_type = excluded.content_type, "
                       "tool_name = excluded.tool_name, "
                       "summary = excluded.summary, "
@@ -1009,11 +1019,13 @@ bool MemorySqliteStore::SavePayloadUnlocked(const MemoryPayloadRef& payload)
         return false;
     }
 
-    sqlite3_bind_text(stmt.get(), 1, payload.uri.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 2, payload.contentType.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 3, payload.toolName.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 4, payload.summary.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt.get(), 5, payload.originalChars);
+    sqlite3_bind_text(stmt.get(), 1, payload.agentId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, payload.sessionId.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 3, payload.uri.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 4, payload.contentType.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 5, payload.toolName.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 6, payload.summary.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt.get(), 7, payload.originalChars);
 
     if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
         LogSqliteError(db_, "SavePayload::step");

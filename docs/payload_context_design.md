@@ -46,6 +46,8 @@ Tool result offloaded from <toolName>, original chars: <n>.
 
 | 字段 | 说明 |
 | --- | --- |
+| `agentId` | payload 所属 Agent |
+| `sessionId` | payload 所属会话 |
 | `uri` | payload 文件 URI |
 | `contentType` | 内容类型 |
 | `summary` | 摘要 |
@@ -106,8 +108,8 @@ Tool result offloaded from <toolName>, original chars: <n>.
 
 ### payload 选择
 
-- 先使用运行时内存中的 payload 快照。
-- 再从 Store 中加载最近 payload。
+- 先使用运行时内存中的 payload 快照，并按 `agentId/sessionId` 过滤。
+- 再从 Store 中加载当前 `agentId/sessionId` 范围内的最近 payload。
 - 使用 `query` 对 uri、toolName、summary、contentType 做大小写不敏感过滤。
 
 ## 与其他模块关系

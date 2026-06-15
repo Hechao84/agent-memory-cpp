@@ -16,10 +16,12 @@ test -f "$DIST_DIR/examples/memory_server/server_config.example.json"
 cat > "$TMP_DIR/sdk_smoke.cpp" <<'CPP'
 #include "agent_memory/builtin_memory_runtime.h"
 
+#include <cstdlib>
+
 int main()
 {
     agent_memory::MemoryConfig config;
-    config.dataPath = "/tmp/agent-memory-package-smoke";
+    config.dataPath = std::getenv("AGENT_MEMORY_PACKAGE_SMOKE_DATA");
     agent_memory::BuiltinMemoryRuntime runtime(config);
     auto stats = runtime.GetStats();
     return stats ? 0 : 1;
@@ -32,7 +34,7 @@ c++ -std=c++17 "$TMP_DIR/sdk_smoke.cpp" \
     -Wl,-rpath,"$DIST_DIR/lib" \
     -lagent_memory \
     -o "$TMP_DIR/sdk_smoke"
-LD_LIBRARY_PATH="$DIST_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$TMP_DIR/sdk_smoke"
+AGENT_MEMORY_PACKAGE_SMOKE_DATA="$TMP_DIR/data" LD_LIBRARY_PATH="$DIST_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$TMP_DIR/sdk_smoke"
 
 
 echo "Package smoke tests passed"

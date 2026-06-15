@@ -75,6 +75,8 @@ bool TestContextRoundTrip()
     relation.metadata["rk"] = "rv";
     pkg.relations.push_back(relation);
     MemoryPayloadRef payload;
+    payload.agentId = "agent";
+    payload.sessionId = "session";
     payload.uri = "file://payload";
     payload.contentType = "text/plain";
     payload.summary = "payload summary";
@@ -92,6 +94,7 @@ bool TestContextRoundTrip()
                       decoded.relations[0].metadata == relation.metadata && decoded.entities[0].metadata == entity.metadata &&
                       decoded.payloadRefs.size() == 1 &&
 
+                     decoded.payloadRefs[0].agentId == payload.agentId && decoded.payloadRefs[0].sessionId == payload.sessionId &&
                      decoded.payloadRefs[0].metadata == payload.metadata && decoded.citations == pkg.citations &&
                      decoded.metadata == pkg.metadata,
                  "context package round-trip failed");

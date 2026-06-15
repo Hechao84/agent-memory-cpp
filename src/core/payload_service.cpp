@@ -70,6 +70,8 @@ MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRe
     }
 
     result.offloaded = true;
+    result.payload.agentId = request.agentId;
+    result.payload.sessionId = request.sessionId;
     result.payload.uri = "file://" + payloadPath.string();
     result.payload.contentType = request.contentType;
     result.payload.summary = BuildPayloadSummary(request);

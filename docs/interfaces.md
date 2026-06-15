@@ -105,6 +105,8 @@ SDK 初始化参数。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
+| `agentId` | string | payload 所属 Agent |
+| `sessionId` | string | payload 所属会话 |
 | `uri` | string | `file://` URI |
 | `contentType` | string | 内容类型 |
 | `summary` | string | 摘要 |
