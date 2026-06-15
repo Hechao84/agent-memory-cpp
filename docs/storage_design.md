@@ -74,10 +74,22 @@ SQLite 初始化时创建以下主要索引：
 - `sourceRefs`
 - `metadata`
 
+## 初始化生命周期
+
+`MemoryStore` 的生命周期需要显式执行：
+
+```text
+new MemorySqliteStore
+  -> Initialize()
+  -> RunInTransaction(...) / Save... / Load...
+```
+
+`RunInTransaction` 不会隐式调用 `Initialize()`。如果 Store 尚未初始化，事务会直接返回失败且不会执行回调。Runtime 的组合根负责在创建 Store 后立即初始化。
+
 ## 并发与事务
 
 - `MemorySqliteStore` 使用 `std::recursive_mutex` 保护 SQLite 连接。
-- 复合写入通过 `RunInTransaction` 执行。
+- 复合写入通过 `RunInTransaction` 执行，但事务入口只负责事务，不负责打开数据库或创建 schema。
 - Consolidation 模块通过事务同时保存 session summary 和长期记忆更新。
 
 ## 与其他模块关系

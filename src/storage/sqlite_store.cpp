@@ -500,9 +500,7 @@ bool MemorySqliteStore::RunInTransaction(const std::function<bool()>& work)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        if (!Initialize()) {
-            return false;
-        }
+        return false;
     }
     if (!ExecuteUnlocked("BEGIN IMMEDIATE TRANSACTION;")) {
         LogSqliteError(db_, "RunInTransaction::begin");

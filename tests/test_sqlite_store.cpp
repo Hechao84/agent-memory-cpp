@@ -316,6 +316,21 @@ bool TestWriterTransactionRollback()
     return true;
 }
 
+bool TestUninitializedTransactionDoesNotInitialize()
+{
+    MemorySqliteStore store(TempDbPath("uninitialized-transaction.db").string());
+    bool called = false;
+    bool ok = store.RunInTransaction([&]() {
+        called = true;
+        return true;
+    });
+    if (ok || called) {
+        std::cerr << "uninitialized transaction should fail without invoking work\n";
+        return false;
+    }
+    return true;
+}
+
 bool TestTransactions()
 {
     MemorySqliteStore store(TempDbPath("transactions.db").string());
@@ -348,7 +363,7 @@ bool TestTransactions()
 int main()
 {
     if (!TestEventsAndCursors() || !TestPayloads() || !TestLongTermMemoryAndSearch() ||
-        !TestWriterTransactionRollback() || !TestTransactions()) {
+        !TestWriterTransactionRollback() || !TestUninitializedTransactionDoesNotInitialize() || !TestTransactions()) {
         return 1;
     }
     return 0;
