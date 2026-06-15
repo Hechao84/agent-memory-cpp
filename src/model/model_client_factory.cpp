@@ -20,20 +20,32 @@ std::string LoadString(const nlohmann::json& j, const std::string& key, const st
     return j[key].get<std::string>();
 }
 
-OpenAiModelConfig LoadOpenAiConfig(const nlohmann::json& j)
+int LoadInt(const nlohmann::json& j, const std::string& key, int defaultValue)
 {
-    OpenAiModelConfig config;
-    static_cast<ModelConfig&>(config) = LoadModelConfig(j, 0);
-    config.organization = LoadString(j, "organization");
-    return config;
+    if (!j.contains(key) || !j[key].is_number_integer()) {
+        return defaultValue;
+    }
+    return j[key].get<int>();
 }
 
-AnthropicModelConfig LoadAnthropicConfig(const nlohmann::json& j)
+double LoadDouble(const nlohmann::json& j, const std::string& key, double defaultValue)
 {
-    AnthropicModelConfig config;
-    static_cast<ModelConfig&>(config) = LoadModelConfig(j, 4096);
-    config.anthropicVersion = LoadString(j, "anthropicVersion", LoadString(j, "anthropic-version", "2023-06-01"));
-    return config;
+    if (!j.contains(key) || !j[key].is_number()) {
+        return defaultValue;
+    }
+    return j[key].get<double>();
+}
+
+void LoadHeaders(const nlohmann::json& j, std::unordered_map<std::string, std::string>& headers)
+{
+    if (!j.contains("headers") || !j["headers"].is_object()) {
+        return;
+    }
+    for (auto it = j["headers"].begin(); it != j["headers"].end(); ++it) {
+        if (it.value().is_string()) {
+            headers[it.key()] = it.value().get<std::string>();
+        }
+    }
 }
 
 OpenAiModelConfig LoadOpenAiConfig(const MemoryModelConfig& source)
@@ -101,42 +113,75 @@ ModelClientLoadResult ValidateCommon(const std::string& formatType, const ModelC
     return {nullptr, ""};
 }
 
-ModelClientLoadResult ValidateCommon(const nlohmann::json& j, const std::string& formatType, const ModelConfig& config)
+MemoryModelConfigLoadResult ValidateJsonConfig(const nlohmann::json& j, const std::string& formatType)
 {
+    if (HasInvalidString(j, "formatType")) {
+        return {{}, "model config formatType must be a string"};
+    }
     if (HasInvalidString(j, "baseUrl")) {
-        return {nullptr, formatType + " model config baseUrl must be a string"};
+        return {{}, formatType + " model config baseUrl must be a string"};
     }
     if (HasInvalidString(j, "apiKey")) {
-        return {nullptr, formatType + " model config apiKey must be a string"};
+        return {{}, formatType + " model config apiKey must be a string"};
     }
     if (HasInvalidString(j, "organization")) {
-        return {nullptr, formatType + " model config organization must be a string"};
+        return {{}, formatType + " model config organization must be a string"};
     }
     if (HasInvalidString(j, "anthropicVersion") || HasInvalidString(j, "anthropic-version")) {
-        return {nullptr, formatType + " model config anthropicVersion must be a string"};
+        return {{}, formatType + " model config anthropicVersion must be a string"};
     }
     if (HasInvalidString(j, "modelName")) {
-        return {nullptr, formatType + " model config modelName must be a string"};
+        return {{}, formatType + " model config modelName must be a string"};
     }
     if (HasInvalidInteger(j, "timeoutSeconds")) {
-        return {nullptr, formatType + " model config timeoutSeconds must be an integer"};
+        return {{}, formatType + " model config timeoutSeconds must be an integer"};
     }
     if (HasInvalidInteger(j, "maxTokens") || HasInvalidInteger(j, "max_tokens")) {
-        return {nullptr, formatType + " model config maxTokens must be an integer"};
+        return {{}, formatType + " model config maxTokens must be an integer"};
     }
     if (HasInvalidNumber(j, "temperature")) {
-        return {nullptr, formatType + " model config temperature must be a number"};
+        return {{}, formatType + " model config temperature must be a number"};
     }
     if (j.contains("headers") && !j["headers"].is_object()) {
-        return {nullptr, formatType + " model config headers must be an object"};
+        return {{}, formatType + " model config headers must be an object"};
     }
     if (j.contains("extraParams") && !j["extraParams"].is_object()) {
-        return {nullptr, formatType + " model config extraParams must be an object"};
+        return {{}, formatType + " model config extraParams must be an object"};
     }
-    return ValidateCommon(formatType, config);
+    return {{}, ""};
 }
 
 } // namespace
+
+MemoryModelConfigLoadResult LoadMemoryModelConfigFromJson(const nlohmann::json& j)
+{
+    if (!j.is_object()) {
+        return {{}, "invalid model config JSON"};
+    }
+
+    std::string formatType = LoadString(j, "formatType", "openai");
+    auto jsonValidation = ValidateJsonConfig(j, formatType);
+    if (!jsonValidation.error.empty()) {
+        return jsonValidation;
+    }
+
+    MemoryModelConfig config;
+    config.enabled = true;
+    config.formatType = formatType;
+    config.baseUrl = LoadString(j, "baseUrl");
+    config.apiKey = LoadString(j, "apiKey");
+    config.modelName = LoadString(j, "modelName");
+    config.organization = LoadString(j, "organization");
+    config.anthropicVersion = LoadString(j, "anthropicVersion", LoadString(j, "anthropic-version", config.anthropicVersion));
+    config.timeoutSeconds = LoadInt(j, "timeoutSeconds", config.timeoutSeconds);
+    config.temperature = LoadDouble(j, "temperature", config.temperature);
+    config.maxTokens = LoadInt(j, "maxTokens", LoadInt(j, "max_tokens", config.maxTokens));
+    if (j.contains("extraParams") && j["extraParams"].is_object()) {
+        config.extraParams = j["extraParams"];
+    }
+    LoadHeaders(j, config.headers);
+    return {config, ""};
+}
 
 ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& modelConfig)
 {
@@ -167,33 +212,11 @@ ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& modelCo
 
 ModelClientLoadResult LoadModelClientFromJson(const nlohmann::json& j)
 {
-    if (!j.is_object()) {
-        return {nullptr, "invalid model config JSON"};
+    auto configResult = LoadMemoryModelConfigFromJson(j);
+    if (!configResult) {
+        return {nullptr, configResult.error};
     }
-
-    if (HasInvalidString(j, "formatType")) {
-        return {nullptr, "model config formatType must be a string"};
-    }
-    std::string formatType = LoadString(j, "formatType", "openai");
-    if (formatType == "openai") {
-        OpenAiModelConfig config = LoadOpenAiConfig(j);
-        auto validation = ValidateCommon(j, formatType, config);
-        if (!validation.error.empty()) {
-            return validation;
-        }
-        return {std::make_unique<OpenAiModelClient>(std::move(config)), ""};
-    }
-
-    if (formatType == "anthropic") {
-        AnthropicModelConfig config = LoadAnthropicConfig(j);
-        auto validation = ValidateCommon(j, formatType, config);
-        if (!validation.error.empty()) {
-            return validation;
-        }
-        return {std::make_unique<AnthropicModelClient>(std::move(config)), ""};
-    }
-
-    return {nullptr, "unsupported model formatType: " + formatType};
+    return LoadModelClientFromConfig(configResult.config);
 }
 
 ModelClientLoadResult LoadModelClientWithResult(const std::string& jsonFile)

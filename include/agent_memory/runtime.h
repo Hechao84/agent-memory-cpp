@@ -24,12 +24,13 @@ public:
     virtual MemoryContextResult BuildContext(const MemoryContextRequest& request) = 0;
     virtual MemoryPayloadWriteResult WritePayload(const MemoryPayloadWriteRequest& request) = 0;
     virtual MemoryPayloadReadResult ReadPayload(const std::string& uri) = 0;
+
+    // Uses the runtime configured model when available, then falls back to rule-based extraction.
     virtual MemoryConsolidationResult Consolidate(const MemoryConsolidationRequest& request) = 0;
-    virtual MemoryConsolidationResult Consolidate(const MemoryConsolidationRequest& request, ModelClient* model)
-    {
-        (void)model;
-        return Consolidate(request);
-    }
+
+    // Uses only the explicitly provided model for this call. Passing nullptr explicitly disables model use.
+    // The model must remain valid for the duration of the call; shared model instances must be thread-safe.
+    virtual MemoryConsolidationResult Consolidate(const MemoryConsolidationRequest& request, ModelClient* model) = 0;
     virtual MemorySearchResponse SearchMemory(const MemorySearchRequest& request) = 0;
     virtual MemoryStatsResult GetStats() const = 0;
 

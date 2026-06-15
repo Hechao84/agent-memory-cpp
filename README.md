@@ -223,6 +223,7 @@ config.model.apiKey = "your-api-key";
 config.model.modelName = "your-model";
 
 agent_memory::BuiltinMemoryRuntime runtime(config);
+auto status = runtime.GetModelStatus();
 runtime.Consolidate(request);
 ```
 

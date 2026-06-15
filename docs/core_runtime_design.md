@@ -77,7 +77,7 @@ CreateRuntimeServices
 
 ### Consolidate
 
-1. `Consolidate(request)` 从 `RuntimeServices::modelClient` 获取内置模型；`Consolidate(request, model)` 使用显式传入模型，`nullptr` 表示禁用模型。
+1. `Consolidate(request)` 从 `RuntimeServices::modelClient` 获取内置模型；`Consolidate(request, model)` 使用显式传入模型，`nullptr` 表示禁用模型。`BuiltinMemoryRuntime::GetModelStatus()` 可查询内置模型配置和加载状态。
 2. 读取当前 agent/session 的 consolidation cursor。
 3. 读取游标之后的事件。
 4. 调用 `ConsolidationService::Consolidate`。

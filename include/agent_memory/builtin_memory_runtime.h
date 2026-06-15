@@ -1,12 +1,24 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include "agent_memory/runtime.h"
 
 namespace agent_memory {
 
 struct BuiltinMemoryRuntimeImpl;
+
+struct AGENT_MEMORY_API MemoryModelStatus
+{
+    bool configured{false};
+    bool available{false};
+    std::string formatType;
+    std::string modelName;
+    std::string error;
+
+    explicit operator bool() const { return available; }
+};
 
 class BuiltinMemoryRuntime : public MemoryRuntime
 {
@@ -22,6 +34,7 @@ public:
     MemoryConsolidationResult Consolidate(const MemoryConsolidationRequest& request, ModelClient* model) override;
     MemorySearchResponse SearchMemory(const MemorySearchRequest& request) override;
     MemoryStatsResult GetStats() const override;
+    MemoryModelStatus GetModelStatus() const;
 
 private:
     std::unique_ptr<BuiltinMemoryRuntimeImpl> impl_;

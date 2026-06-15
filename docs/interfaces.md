@@ -292,6 +292,14 @@ MyModelClient model;
 auto result = runtime.Consolidate(request, &model);
 ```
 
+### 模型状态查询
+
+```cpp
+auto status = runtime.GetModelStatus();
+```
+
+`BuiltinMemoryRuntime::GetModelStatus()` 返回 `configured`、`available`、`formatType`、`modelName` 和 `error`，用于 SDK 调用方判断 `MemoryConfig.model` 是否已成功初始化。该接口只描述 runtime 配置的内置模型，不描述单次 `Consolidate(request, &model)` 传入的宿主模型。
+
 ### Consolidate 重载区别和注意事项
 
 | 调用方式 | 模型来源 | 行为 |

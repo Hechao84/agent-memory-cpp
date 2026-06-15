@@ -199,6 +199,7 @@ SearchMemory
 - `Consolidate(const MemoryConsolidationRequest&, ModelClient*)`：使用显式传入模型；传 `nullptr` 表示禁用模型
 - `SearchMemory(const MemorySearchRequest&)`
 - `GetStats() const`
+- `BuiltinMemoryRuntime::GetModelStatus() const`
 
 两个 `Consolidate` 重载的区别：
 

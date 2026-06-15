@@ -157,6 +157,18 @@ MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolid
     return ConsolidateWithModel(*impl_, request, model);
 }
 
+MemoryModelStatus BuiltinMemoryRuntime::GetModelStatus() const
+{
+    std::lock_guard<std::mutex> lock(impl_->mutex);
+    MemoryModelStatus status;
+    status.configured = config_.model.enabled;
+    status.available = impl_->services->modelClient != nullptr;
+    status.formatType = config_.model.formatType;
+    status.modelName = config_.model.modelName;
+    status.error = impl_->services->modelClientError;
+    return status;
+}
+
 MemorySearchResponse BuiltinMemoryRuntime::SearchMemory(const MemorySearchRequest& request)
 {
     std::vector<MemorySearchResult> results;

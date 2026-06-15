@@ -10,6 +10,14 @@
 
 namespace agent_memory {
 
+struct MemoryModelConfigLoadResult
+{
+    MemoryModelConfig config;
+    std::string error;
+
+    explicit operator bool() const { return error.empty(); }
+};
+
 struct ModelClientLoadResult
 {
     std::unique_ptr<ModelClient> client;
@@ -18,6 +26,7 @@ struct ModelClientLoadResult
     explicit operator bool() const { return client != nullptr; }
 };
 
+MemoryModelConfigLoadResult LoadMemoryModelConfigFromJson(const nlohmann::json& j);
 ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& config);
 ModelClientLoadResult LoadModelClientFromJson(const nlohmann::json& j);
 ModelClientLoadResult LoadModelClientWithResult(const std::string& jsonFile);

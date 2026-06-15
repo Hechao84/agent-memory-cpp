@@ -134,4 +134,4 @@ ConsolidationService
         -> Runtime builtin model / Host implementation
 ```
 
-`Consolidate(request)` 使用 runtime 内置模型；`Consolidate(request, &model)` 使用宿主显式传入模型并覆盖内置模型；`Consolidate(request, nullptr)` 表示本次调用禁用模型。如果模型不可用或返回空结果，Consolidation 模块会使用规则处理器回退；Server 配置 `model.strict=true` 时，模型配置校验失败会导致启动失败。
+`Consolidate(request)` 使用 runtime 内置模型；`Consolidate(request, &model)` 使用宿主显式传入模型并覆盖内置模型；`Consolidate(request, nullptr)` 表示本次调用禁用模型。SDK 调用方可通过 `BuiltinMemoryRuntime::GetModelStatus()` 查询内置模型是否已成功初始化。如果模型不可用或返回空结果，Consolidation 模块会使用规则处理器回退；Server 配置 `model.strict=true` 时，模型配置校验失败会导致启动失败。

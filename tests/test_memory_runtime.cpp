@@ -72,6 +72,26 @@ int main()
     config.offloadThresholdChars = 10;
 
     BuiltinMemoryRuntime runtime(config);
+    auto initialModelStatus = runtime.GetModelStatus();
+    if (initialModelStatus.configured || initialModelStatus.available || !initialModelStatus.error.empty()) {
+        std::cerr << "default model status should be unconfigured\n";
+        return 1;
+    }
+
+    auto invalidModelPath = fs::temp_directory_path() / "agent_memory_cpp_invalid_model_status_test";
+    fs::remove_all(invalidModelPath);
+    MemoryConfig invalidModelConfig;
+    invalidModelConfig.dataPath = invalidModelPath.string();
+    invalidModelConfig.model.enabled = true;
+    invalidModelConfig.model.formatType = "openai";
+    invalidModelConfig.model.modelName = "missing-base-url";
+    BuiltinMemoryRuntime invalidModelRuntime(invalidModelConfig);
+    auto invalidModelStatus = invalidModelRuntime.GetModelStatus();
+    if (!invalidModelStatus.configured || invalidModelStatus.available || invalidModelStatus.error.empty()) {
+        std::cerr << "invalid builtin model status should expose load error\n";
+        return 1;
+    }
+    fs::remove_all(invalidModelPath);
 
     MemoryEvent event;
     event.type = MemoryEventType::MESSAGE_APPENDED;
@@ -260,6 +280,12 @@ int main()
         return HttpResponse{200, R"({"choices":[{"message":{"content":"{\"topicSummaries\":[\"Discussed runtime model config\"],\"profileSummaries\":[],\"entities\":[{\"id\":\"entity:runtime.model\",\"entityType\":\"topic\",\"name\":\"Runtime model\",\"summary\":\"Runtime model config\",\"confidence\":0.9}],\"relations\":[]}"}}]})"};
     });
     BuiltinMemoryRuntime builtinModelRuntime(builtinModelConfig);
+    auto builtinStatus = builtinModelRuntime.GetModelStatus();
+    if (!builtinStatus.configured || !builtinStatus.available || builtinStatus.formatType != "openai" || builtinStatus.modelName != "test-model" || !builtinStatus.error.empty()) {
+        ResetJsonPostTransportForTesting();
+        std::cerr << "configured builtin model status should be available\n";
+        return 1;
+    }
     MemoryEvent builtinModelEvent = event;
     builtinModelEvent.agentId = "agent-model";
     builtinModelEvent.sessionId = "session-model";
