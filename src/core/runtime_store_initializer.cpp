@@ -10,20 +10,20 @@ namespace fs = std::filesystem;
 
 namespace agent_memory {
 
-std::unique_ptr<MemoryStore> CreateRuntimeStore(const MemoryConfig& config)
+RuntimeStoreCreateResult CreateRuntimeStore(const MemoryConfig& config)
 {
     fs::path dbPath = RuntimeDatabasePath(config);
     std::error_code error;
     fs::create_directories(dbPath.parent_path(), error);
     if (error) {
-        return nullptr;
+        return {nullptr, "failed to create runtime data directory: " + dbPath.parent_path().string() + ": " + error.message()};
     }
 
     auto store = std::make_unique<MemorySqliteStore>(dbPath.string());
     if (!store->Initialize()) {
-        return nullptr;
+        return {nullptr, "failed to initialize sqlite memory store: " + dbPath.string()};
     }
-    return store;
+    return {std::move(store), ""};
 }
 
 } // namespace agent_memory

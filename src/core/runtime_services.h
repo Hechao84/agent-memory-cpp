@@ -27,6 +27,7 @@ struct RuntimeServices
     std::unique_ptr<ConsolidationService> consolidationService;
     std::unique_ptr<ModelClient> modelClient;
     std::string modelClientError;
+    std::string storeError;
 };
 
 std::unique_ptr<RuntimeServices> CreateRuntimeServices(const MemoryConfig& config);

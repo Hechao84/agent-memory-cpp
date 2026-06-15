@@ -44,6 +44,8 @@ Core Runtime 是项目的运行时编排层，负责把事件、上下文、载�
 ```text
 CreateRuntimeServices
   -> CreateRuntimeStore
+     -> Initialize MemoryStore
+     -> record storeError if initialization fails
   -> LoadModelClientFromConfig(config.model)
   -> PayloadService(config, dataPath, store)
   -> ContextBuilder(config, store)
@@ -51,6 +53,8 @@ CreateRuntimeServices
   -> MemoryUpdateWriter(store)
   -> ConsolidationService(writer, fallbackProcessor)
 ```
+
+SDK 模式下，Store 初始化失败不会让 `BuiltinMemoryRuntime` 构造函数抛异常；错误会记录到 `RuntimeServices::storeError`，后续依赖 Store 的 API 返回结构化错误。Server 模式会在 setup 阶段通过 `GetStats()` 检查 Store 可用性，失败则启动失败。
 
 ## 关键流程
 

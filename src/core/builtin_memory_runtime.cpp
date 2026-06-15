@@ -51,6 +51,12 @@ ModelClient* GetConfiguredModel(BuiltinMemoryRuntimeImpl& impl)
     return impl.services->modelClient.get();
 }
 
+std::string StoreUnavailableMessage(BuiltinMemoryRuntimeImpl& impl)
+{
+    std::lock_guard<std::mutex> lock(impl.mutex);
+    return impl.services->storeError.empty() ? "memory store unavailable" : impl.services->storeError;
+}
+
 MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
                                               const MemoryConsolidationRequest& request,
                                               ModelClient* model)
@@ -58,6 +64,11 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
     ConsolidationService* consolidationService = GetConsolidationService(impl);
     MemoryStore* store = GetStore(impl);
 
+    if (store == nullptr) {
+        MemoryConsolidationResult result;
+        result.error = {"store_unavailable", StoreUnavailableMessage(impl), "", false};
+        return result;
+    }
     if (consolidationService == nullptr) {
         MemoryConsolidationResult result;
         result.error = {"consolidation_unavailable", "consolidation service unavailable", "", false};
@@ -65,10 +76,8 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
     }
 
     std::lock_guard<std::mutex> consolidationLock(impl.consolidationMutex);
-    std::string startCursor = request.forceReprocess || store == nullptr ? std::string() : store->LoadConsolidationCursor(request.agentId, request.sessionId);
-    std::vector<MemoryEvent> events = store
-        ? store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor)
-        : std::vector<MemoryEvent>();
+    std::string startCursor = request.forceReprocess ? std::string() : store->LoadConsolidationCursor(request.agentId, request.sessionId);
+    std::vector<MemoryEvent> events = store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor);
     MemoryConsolidationResult result = consolidationService->Consolidate(request, events, model);
     if (result.succeeded && store != nullptr && !store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor)) {
         result.succeeded = false;
@@ -89,7 +98,7 @@ MemoryOperationResult BuiltinMemoryRuntime::AppendEvent(const MemoryEvent& event
 {
     MemoryStore* store = GetStore(*impl_);
     if (store == nullptr) {
-        return MemoryFailure("store_unavailable", "memory store unavailable");
+        return MemoryFailure("store_unavailable", StoreUnavailableMessage(*impl_));
     }
     if (!store->SaveEvent(event)) {
         return MemoryFailure("event_persist_failed", "failed to persist memory event");
@@ -158,7 +167,7 @@ MemorySearchResponse BuiltinMemoryRuntime::SearchMemory(const MemorySearchReques
 {
     MemoryStore* store = GetStore(*impl_);
     if (store == nullptr) {
-        return {false, {}, {"search_unavailable", "memory store unavailable", "", false}};
+        return {false, {}, {"search_unavailable", StoreUnavailableMessage(*impl_), "", false}};
     }
     return {true, store->SearchLongTermMemory(request), {}};
 }
@@ -167,7 +176,7 @@ MemoryStatsResult BuiltinMemoryRuntime::GetStats() const
 {
     MemoryStore* store = GetStore(*impl_);
     if (store == nullptr) {
-        return {false, {}, {"stats_unavailable", "memory store unavailable", "", false}};
+        return {false, {}, {"stats_unavailable", StoreUnavailableMessage(*impl_), "", false}};
     }
     return {true, store->GetStoreStats(), {}};
 }

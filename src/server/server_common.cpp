@@ -84,6 +84,10 @@ ServerSetup CreateServerSetup(const ServerOptions& options)
     }
 
     auto runtime = std::make_unique<BuiltinMemoryRuntime>(config);
+    auto stats = runtime->GetStats();
+    if (!stats) {
+        throw std::runtime_error(stats.error.message);
+    }
 
     return {std::move(config), std::move(runtime)};
 }

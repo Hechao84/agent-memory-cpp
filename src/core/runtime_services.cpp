@@ -21,7 +21,9 @@ std::unique_ptr<RuntimeServices> CreateRuntimeServices(const MemoryConfig& confi
     std::string dataPath = ResolveRuntimeDataPath(config);
     auto services = std::make_unique<RuntimeServices>();
 
-    services->store = CreateRuntimeStore(config);
+    auto storeResult = CreateRuntimeStore(config);
+    services->store = std::move(storeResult.store);
+    services->storeError = storeResult.error;
     auto modelResult = LoadModelClientFromConfig(config.model);
     services->modelClient = std::move(modelResult.client);
     services->modelClientError = modelResult.error;

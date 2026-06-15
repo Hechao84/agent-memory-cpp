@@ -115,7 +115,9 @@ parse cli
      -> PrepareDataPath
      -> map server model config to MemoryConfig.model
      -> BuiltinMemoryRuntime
+        -> initialize MemoryStore
         -> LoadModelClientFromConfig
+     -> fail fast if Store is unavailable
   -> httplib::Server
   -> MemoryHttpServer::RegisterRoutes
   -> listen(host, port)

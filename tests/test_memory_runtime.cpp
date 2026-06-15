@@ -50,8 +50,8 @@ int main()
         badConfig.dataPath = "/dev/null/";
         BuiltinMemoryRuntime badRuntime(badConfig);
         auto badStats = badRuntime.GetStats();
-        if (badStats.stats.payloads != 0 || badStats.stats.events != 0) {
-            std::cerr << "init failure should produce empty stats\n";
+        if (badStats || badStats.error.code != "stats_unavailable" || badStats.error.message.find("failed to") == std::string::npos) {
+            std::cerr << "init failure should expose store error in stats\n";
             return 1;
         }
         MemoryEvent badEvent;
@@ -61,8 +61,8 @@ int main()
         badEvent.role = "user";
         badEvent.content = "should fail";
         auto failedAppend = badRuntime.AppendEvent(badEvent);
-        if (failedAppend || failedAppend.error.code != "store_unavailable") {
-            std::cerr << "AppendEvent should fail when store is unavailable\n";
+        if (failedAppend || failedAppend.error.code != "store_unavailable" || failedAppend.error.message.find("failed to") == std::string::npos) {
+            std::cerr << "AppendEvent should fail with store init error\n";
             return 1;
         }
     }
