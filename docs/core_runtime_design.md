@@ -36,9 +36,8 @@ Core Runtime 是项目的运行时编排层，负责把事件、上下文、载�
 `BuiltinMemoryRuntimeImpl` 持有：
 
 - `RuntimeServices services`：Store、PayloadService、ContextBuilder、ConsolidationService、内置 ModelClient 等。
-- `mutex`：保护服务指针和少量运行时状态。
+- `mutex`：仅短暂保护服务指针读取和模型状态读取。
 - `consolidationMutex`：串行化长期记忆沉淀。
-- `lastRuntimeError`：最近运行时错误。
 
 `RuntimeServices` 创建关系：
 
@@ -86,9 +85,11 @@ Store 是事件的单一事实来源，Runtime 不再维护事件内存快照。
 
 ## 并发设计
 
-- 所有运行时状态访问通过 `mutex` 保护。
+- Runtime `mutex` 只允许短持有，用于读取 `RuntimeServices` 中的服务指针和内置模型状态。
+- 不在持有 Runtime `mutex` 时调用 Store、PayloadService、ContextBuilder 或 ConsolidationService 的耗时操作。
 - 长期记忆沉淀通过 `consolidationMutex` 串行执行，避免同一运行时内 cursor 竞争。
 - Store 自身也有独立锁保护 SQLite 连接。
+- 锁顺序约定：短暂获取 Runtime `mutex` 读取服务指针；释放后再进入 `consolidationMutex` 或 Store/Payload/Context 操作。
 
 ## 配置
 

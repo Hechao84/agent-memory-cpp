@@ -17,22 +17,46 @@ namespace agent_memory {
 struct BuiltinMemoryRuntimeImpl
 {
     std::unique_ptr<RuntimeServices> services;
-    std::string lastRuntimeError;
     mutable std::mutex mutex;
     mutable std::mutex consolidationMutex;
 };
+
+MemoryStore* GetStore(BuiltinMemoryRuntimeImpl& impl)
+{
+    std::lock_guard<std::mutex> lock(impl.mutex);
+    return impl.services->store.get();
+}
+
+ContextBuilder* GetContextBuilder(BuiltinMemoryRuntimeImpl& impl)
+{
+    std::lock_guard<std::mutex> lock(impl.mutex);
+    return impl.services->contextBuilder.get();
+}
+
+PayloadService* GetPayloadService(BuiltinMemoryRuntimeImpl& impl)
+{
+    std::lock_guard<std::mutex> lock(impl.mutex);
+    return impl.services->payloadService.get();
+}
+
+ConsolidationService* GetConsolidationService(BuiltinMemoryRuntimeImpl& impl)
+{
+    std::lock_guard<std::mutex> lock(impl.mutex);
+    return impl.services->consolidationService.get();
+}
+
+ModelClient* GetConfiguredModel(BuiltinMemoryRuntimeImpl& impl)
+{
+    std::lock_guard<std::mutex> lock(impl.mutex);
+    return impl.services->modelClient.get();
+}
 
 MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
                                               const MemoryConsolidationRequest& request,
                                               ModelClient* model)
 {
-    ConsolidationService* consolidationService = nullptr;
-    MemoryStore* store = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl.mutex);
-        consolidationService = impl.services->consolidationService.get();
-        store = impl.services->store.get();
-    }
+    ConsolidationService* consolidationService = GetConsolidationService(impl);
+    MemoryStore* store = GetStore(impl);
 
     if (consolidationService == nullptr) {
         MemoryConsolidationResult result;
@@ -49,8 +73,6 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
     if (result.succeeded && store != nullptr && !store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor)) {
         result.succeeded = false;
         result.error = {"cursor_save_failed", "failed to persist consolidation cursor", "", false};
-        std::lock_guard<std::mutex> lock(impl.mutex);
-        impl.lastRuntimeError = result.error.message;
     }
     return result;
 }
@@ -65,19 +87,11 @@ BuiltinMemoryRuntime::~BuiltinMemoryRuntime() = default;
 
 MemoryOperationResult BuiltinMemoryRuntime::AppendEvent(const MemoryEvent& event)
 {
-    MemoryStore* store = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        store = impl_->services->store.get();
-    }
+    MemoryStore* store = GetStore(*impl_);
     if (store == nullptr) {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        impl_->lastRuntimeError = "memory store unavailable";
         return MemoryFailure("store_unavailable", "memory store unavailable");
     }
     if (!store->SaveEvent(event)) {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        impl_->lastRuntimeError = "failed to persist memory event";
         return MemoryFailure("event_persist_failed", "failed to persist memory event");
     }
     return MemorySuccess();
@@ -85,11 +99,7 @@ MemoryOperationResult BuiltinMemoryRuntime::AppendEvent(const MemoryEvent& event
 
 MemoryContextResult BuiltinMemoryRuntime::BuildContext(const MemoryContextRequest& request)
 {
-    ContextBuilder* contextBuilder = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        contextBuilder = impl_->services->contextBuilder.get();
-    }
+    ContextBuilder* contextBuilder = GetContextBuilder(*impl_);
     if (contextBuilder == nullptr) {
         return {false, {}, {"context_build_failed", "context builder unavailable", "", false}};
     }
@@ -98,11 +108,7 @@ MemoryContextResult BuiltinMemoryRuntime::BuildContext(const MemoryContextReques
 
 MemoryPayloadWriteResult BuiltinMemoryRuntime::WritePayload(const MemoryPayloadWriteRequest& request)
 {
-    PayloadService* payloadService = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        payloadService = impl_->services->payloadService.get();
-    }
+    PayloadService* payloadService = GetPayloadService(*impl_);
     if (payloadService == nullptr) {
         MemoryPayloadWriteResult result;
         result.replacementContent = request.content;
@@ -115,11 +121,7 @@ MemoryPayloadWriteResult BuiltinMemoryRuntime::WritePayload(const MemoryPayloadW
 
 MemoryPayloadReadResult BuiltinMemoryRuntime::ReadPayload(const std::string& uri)
 {
-    PayloadService* payloadService = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        payloadService = impl_->services->payloadService.get();
-    }
+    PayloadService* payloadService = GetPayloadService(*impl_);
     if (payloadService == nullptr) {
         return {false, std::string(), {"payload_read_failed", "payload service unavailable", "", false}};
     }
@@ -132,12 +134,7 @@ MemoryPayloadReadResult BuiltinMemoryRuntime::ReadPayload(const std::string& uri
 
 MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolidationRequest& request)
 {
-    ModelClient* model = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        model = impl_->services->modelClient.get();
-    }
-    return ConsolidateWithModel(*impl_, request, model);
+    return ConsolidateWithModel(*impl_, request, GetConfiguredModel(*impl_));
 }
 
 MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolidationRequest& request, ModelClient* model)
@@ -159,21 +156,16 @@ MemoryModelStatus BuiltinMemoryRuntime::GetModelStatus() const
 
 MemorySearchResponse BuiltinMemoryRuntime::SearchMemory(const MemorySearchRequest& request)
 {
-    std::vector<MemorySearchResult> results;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        results = impl_->services->store ? impl_->services->store->SearchLongTermMemory(request) : std::vector<MemorySearchResult>();
+    MemoryStore* store = GetStore(*impl_);
+    if (store == nullptr) {
+        return {false, {}, {"search_unavailable", "memory store unavailable", "", false}};
     }
-    return {true, results, {}};
+    return {true, store->SearchLongTermMemory(request), {}};
 }
 
 MemoryStatsResult BuiltinMemoryRuntime::GetStats() const
 {
-    MemoryStore* store = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        store = impl_->services->store.get();
-    }
+    MemoryStore* store = GetStore(*impl_);
     if (store == nullptr) {
         return {false, {}, {"stats_unavailable", "memory store unavailable", "", false}};
     }
