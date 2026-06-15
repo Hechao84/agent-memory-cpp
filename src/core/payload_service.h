@@ -8,12 +8,12 @@
 
 namespace agent_memory {
 
-class MemoryStore;
+class MemoryPayloadStore;
 
 class PayloadService
 {
 public:
-    PayloadService(const MemoryConfig& config, std::string dataPath, MemoryStore* store);
+    PayloadService(const MemoryConfig& config, std::string dataPath, MemoryPayloadStore* store);
 
     MemoryPayloadWriteResult WritePayload(const MemoryPayloadWriteRequest& request);
     std::string ReadPayload(const std::string& ref) const;
@@ -29,7 +29,7 @@ private:
     const MemoryConfig& config_;
     std::string dataPath_;
     std::string canonicalPayloadDirectory_;
-    MemoryStore* store_;
+    MemoryPayloadStore* store_;
     mutable std::recursive_mutex mutex_;
     mutable std::string lastError_;
 };

@@ -15,7 +15,7 @@ namespace fs = std::filesystem;
 
 namespace agent_memory {
 
-PayloadService::PayloadService(const MemoryConfig& config, std::string dataPath, MemoryStore* store)
+PayloadService::PayloadService(const MemoryConfig& config, std::string dataPath, MemoryPayloadStore* store)
     : config_(config), dataPath_(std::move(dataPath)), store_(store)
 {
     canonicalPayloadDirectory_ = CanonicalPath(PayloadDirectory());

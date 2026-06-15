@@ -8,7 +8,7 @@
 
 namespace agent_memory {
 
-class MemoryStore;
+class MemoryLongTermStore;
 class MemoryStoreTransaction;
 
 struct MemoryUpdateWriteResult
@@ -22,7 +22,7 @@ struct MemoryUpdateWriteResult
 class MemoryUpdateWriter
 {
 public:
-    explicit MemoryUpdateWriter(MemoryStore& store);
+    explicit MemoryUpdateWriter(MemoryLongTermStore& store);
 
     bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work);
     MemoryUpdateWriteResult SaveSessionSummary(MemoryStoreTransaction& transaction, const std::string& agentId,
@@ -33,7 +33,7 @@ public:
                                        const std::vector<std::string>& sourceRefs);
 
 private:
-    MemoryStore& store_;
+    MemoryLongTermStore& store_;
 };
 
 } // namespace agent_memory

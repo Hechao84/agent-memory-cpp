@@ -2,7 +2,7 @@
 
 ## 模块目标
 
-Storage 模块负责记忆数据的持久化和检索，为运行时提供统一的 `MemoryStore` 抽象，并提供 SQLite 实现 `MemorySqliteStore`。
+Storage 模块负责记忆数据的持久化和检索。内部 Store 接口按能力拆分，`MemoryStore` 作为组合接口保留，SQLite 实现为 `MemorySqliteStore`。
 
 ## 主要文件
 
@@ -12,7 +12,18 @@ Storage 模块负责记忆数据的持久化和检索，为运行时提供统一
 
 ## 核心接口
 
-`MemoryStore` 提供以下能力：
+`store.h` 按调用方需要拆出多个小接口：
+
+| 接口 | 主要调用方 | 职责 |
+| --- | --- | --- |
+| `MemoryEventStore` | Runtime、ContextBuilder | 保存和读取事件 |
+| `MemoryPayloadStore` | PayloadService、ContextBuilder | 保存和读取 payload 引用 |
+| `MemoryLongTermStore` | Consolidation、ContextBuilder | 长期记忆、cursor、事务写入 |
+| `MemorySearchStore` | Runtime、ContextBuilder | 长期记忆搜索 |
+| `MemoryStatsStore` | Runtime/Server setup | 统计信息 |
+| `MemoryStore` | Composition root、SQLite 实现 | 组合以上所有能力并提供 `Initialize()` |
+
+`MemoryStore` 组合接口仍提供以下能力：
 
 | 方法 | 职责 |
 | --- | --- |

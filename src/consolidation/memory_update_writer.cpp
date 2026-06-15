@@ -15,7 +15,7 @@ MemoryUpdateWriteResult FailedWrite()
 
 } // namespace
 
-MemoryUpdateWriter::MemoryUpdateWriter(MemoryStore& store)
+MemoryUpdateWriter::MemoryUpdateWriter(MemoryLongTermStore& store)
     : store_(store)
 {
 }

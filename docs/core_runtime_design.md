@@ -48,7 +48,7 @@ CreateRuntimeServices
      -> record storeError if initialization fails
   -> LoadModelClientFromConfig(config.model)
   -> PayloadService(config, dataPath, store)
-  -> ContextBuilder(config, store)
+  -> ContextBuilder(config, eventStore, payloadStore, longTermStore, searchStore)
   -> RuleBasedLongTermMemoryProcessor
   -> MemoryUpdateWriter(store)
   -> ConsolidationService(writer, fallbackProcessor)

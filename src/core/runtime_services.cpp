@@ -29,7 +29,8 @@ std::unique_ptr<RuntimeServices> CreateRuntimeServices(const MemoryConfig& confi
     services->modelClientError = modelResult.error;
 
     services->payloadService = std::make_unique<PayloadService>(config, dataPath, services->store.get());
-    services->contextBuilder = std::make_unique<ContextBuilder>(config, services->store.get());
+    services->contextBuilder = std::make_unique<ContextBuilder>(config, services->store.get(), services->store.get(),
+                                                                 services->store.get(), services->store.get());
     services->longTermProcessor = std::make_unique<RuleBasedLongTermMemoryProcessor>();
     if (services->store) {
         services->memoryUpdateWriter = std::make_unique<MemoryUpdateWriter>(*services->store);

@@ -9,12 +9,16 @@
 
 namespace agent_memory {
 
-class MemoryStore;
+class MemoryEventStore;
+class MemoryLongTermStore;
+class MemoryPayloadStore;
+class MemorySearchStore;
 
 class ContextBuilder
 {
 public:
-    ContextBuilder(const MemoryConfig& config, MemoryStore* store);
+    ContextBuilder(const MemoryConfig& config, MemoryEventStore* eventStore, MemoryPayloadStore* payloadStore,
+                   MemoryLongTermStore* longTermStore, MemorySearchStore* searchStore);
 
     MemoryContextPackage BuildContext(const MemoryContextRequest& request) const;
 
@@ -25,7 +29,10 @@ private:
     int LongTermMemoryLimit(const MemoryContextRequest& request) const;
 
     const MemoryConfig& config_;
-    MemoryStore* store_;
+    MemoryEventStore* eventStore_;
+    MemoryPayloadStore* payloadStore_;
+    MemoryLongTermStore* longTermStore_;
+    MemorySearchStore* searchStore_;
 };
 
 } // namespace agent_memory
