@@ -28,6 +28,19 @@ struct LongTermMemorySnapshot
     std::vector<MemoryRelation> relations;
 };
 
+class MemoryStoreTransaction
+{
+public:
+    virtual ~MemoryStoreTransaction() = default;
+
+    virtual bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
+                             const std::string& topic, const std::string& summary, float confidence,
+                             const std::vector<std::string>& sourceRefs = {}) = 0;
+    virtual bool SaveEntity(const MemoryEntity& entity) = 0;
+    virtual bool SaveRelation(const MemoryRelation& relation) = 0;
+    virtual bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) = 0;
+};
+
 class MemoryStore
 {
 public:
@@ -43,7 +56,7 @@ public:
     virtual bool SaveEntity(const MemoryEntity& entity) = 0;
     virtual bool SaveRelation(const MemoryRelation& relation) = 0;
     virtual bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) = 0;
-    virtual bool RunInTransaction(const std::function<bool()>& work) = 0;
+    virtual bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work) = 0;
     virtual std::string LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const = 0;
     virtual bool SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId,
                                          const std::string& cursor) = 0;

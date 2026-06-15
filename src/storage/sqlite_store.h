@@ -31,7 +31,7 @@ public:
                      const std::vector<std::string>& sourceRefs = {}) override;
     bool SaveEntity(const MemoryEntity& entity) override;
     bool SaveRelation(const MemoryRelation& relation) override;
-    bool RunInTransaction(const std::function<bool()>& work) override;
+    bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work) override;
     bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) override;
     std::string LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override;
     bool SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override;
@@ -45,6 +45,8 @@ public:
     MemoryStats GetStoreStats() const override;
 
 private:
+    friend class SqliteStoreTransaction;
+
     std::string dbPath_;
     mutable std::recursive_mutex mutex_;
     sqlite3* db_{nullptr};

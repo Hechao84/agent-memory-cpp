@@ -93,6 +93,7 @@ Store 是事件的单一事实来源，Runtime 不再维护事件内存快照。
 - 不在持有 Runtime `mutex` 时调用 Store、PayloadService、ContextBuilder 或 ConsolidationService 的耗时操作。
 - 长期记忆沉淀通过 `consolidationMutex` 串行执行，避免同一运行时内 cursor 竞争。
 - Store 自身也有独立锁保护 SQLite 连接。
+- Consolidation 事务内写入通过 `MemoryStoreTransaction` 执行，避免事务回调再次调用会加锁的 Store 公共写方法。
 - 锁顺序约定：短暂获取 Runtime `mutex` 读取服务指针；释放后再进入 `consolidationMutex` 或 Store/Payload/Context 操作。
 
 ## 配置

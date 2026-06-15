@@ -11,17 +11,6 @@ using namespace agent_memory;
 
 namespace {
 
-class FailingEntitySqliteStore : public MemorySqliteStore
-{
-public:
-    explicit FailingEntitySqliteStore(std::string dbPath)
-        : MemorySqliteStore(std::move(dbPath))
-    {
-    }
-
-    bool SaveEntity(const MemoryEntity&) override { return false; }
-};
-
 std::filesystem::path TempDbPath(const std::string& name)
 {
     auto dir = std::filesystem::temp_directory_path() / "agent-memory-sqlite-tests";
@@ -281,7 +270,7 @@ bool TestLongTermMemoryAndSearch()
 
 bool TestWriterTransactionRollback()
 {
-    FailingEntitySqliteStore store(TempDbPath("writer_rollback.db").string());
+    MemorySqliteStore store(TempDbPath("writer_rollback.db").string());
     if (!store.Initialize()) {
         std::cerr << "sqlite initialize failed\n";
         return false;
@@ -299,13 +288,13 @@ bool TestWriterTransactionRollback()
     entity.name = "fail topic";
     update.entities.push_back(entity);
 
-    bool ok = writer.RunInTransaction([&]() {
-        sessionWrite = writer.SaveSessionSummary("agent-1", "session-1", "session summary", {"event://1"});
-        updateWrite = writer.SaveUpdate("agent-1", "session-1", update, {"event://1"});
-        return sessionWrite.succeeded && updateWrite.succeeded;
+    bool ok = writer.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+        sessionWrite = writer.SaveSessionSummary(transaction, "agent-1", "session-1", "session summary", {"event://1"});
+        updateWrite = writer.SaveUpdate(transaction, "agent-1", "session-1", update, {"event://1"});
+        return false;
     });
-    if (ok || updateWrite.succeeded) {
-        std::cerr << "writer transaction should fail\n";
+    if (ok || !sessionWrite.succeeded || !updateWrite.succeeded) {
+        std::cerr << "writer transaction should roll back requested failure\n";
         return false;
     }
     auto stats = store.GetStoreStats();
@@ -320,7 +309,7 @@ bool TestUninitializedTransactionDoesNotInitialize()
 {
     MemorySqliteStore store(TempDbPath("uninitialized-transaction.db").string());
     bool called = false;
-    bool ok = store.RunInTransaction([&]() {
+    bool ok = store.RunInTransaction([&](MemoryStoreTransaction&) {
         called = true;
         return true;
     });
@@ -339,19 +328,19 @@ bool TestTransactions()
         return false;
     }
 
-    bool ok = store.RunInTransaction([&]() {
-        return store.SaveEvent(MakeEvent("agent-1", "session-1", "user", "inside transaction"));
+    bool ok = store.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+        return transaction.SaveSummary("agent-1", "session-1", "session", "conversation", "inside transaction", 0.5F);
     });
-    if (!ok || store.LoadEventsAfterCursor("agent-1", "session-1", "").size() != 1) {
+    if (!ok || store.GetStoreStats().summaries != 1) {
         std::cerr << "transaction commit failed\n";
         return false;
     }
 
-    bool failed = store.RunInTransaction([&]() {
-        store.SaveEvent(MakeEvent("agent-1", "session-1", "user", "rolled back"));
+    bool failed = store.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+        transaction.SaveSummary("agent-1", "session-1", "session", "conversation", "rolled back", 0.5F);
         return false;
     });
-    if (failed || store.LoadEventsAfterCursor("agent-1", "session-1", "").size() != 1) {
+    if (failed || store.GetStoreStats().summaries != 1) {
         std::cerr << "transaction rollback failed\n";
         return false;
     }

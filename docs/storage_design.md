@@ -90,6 +90,7 @@ new MemorySqliteStore
 
 - `MemorySqliteStore` 使用 `std::recursive_mutex` 保护 SQLite 连接。
 - 复合写入通过 `RunInTransaction` 执行，但事务入口只负责事务，不负责打开数据库或创建 schema。
+- `RunInTransaction` 会向回调传入 `MemoryStoreTransaction`，事务内写入必须使用该事务接口，而不是再次调用带锁的 Store 公共写方法。
 - Consolidation 模块通过事务同时保存 session summary 和长期记忆更新。
 
 ## 与其他模块关系

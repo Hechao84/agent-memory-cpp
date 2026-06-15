@@ -229,6 +229,37 @@ std::string Fts5EscapeQuery(const std::string& query)
 
 } // namespace
 
+class SqliteStoreTransaction : public MemoryStoreTransaction
+{
+public:
+    explicit SqliteStoreTransaction(MemorySqliteStore& store) : store_(store) {}
+
+    bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
+                     const std::string& topic, const std::string& summary, float confidence,
+                     const std::vector<std::string>& sourceRefs = {}) override
+    {
+        return store_.SaveSummaryUnlocked(agentId, sessionId, level, topic, summary, confidence, sourceRefs);
+    }
+
+    bool SaveEntity(const MemoryEntity& entity) override
+    {
+        return store_.SaveEntityUnlocked(entity);
+    }
+
+    bool SaveRelation(const MemoryRelation& relation) override
+    {
+        return store_.SaveRelationUnlocked(relation);
+    }
+
+    bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) override
+    {
+        return store_.MarkEntityObsoleteUnlocked(entityId, supersededBy);
+    }
+
+private:
+    MemorySqliteStore& store_;
+};
+
 MemorySqliteStore::MemorySqliteStore(std::string dbPath)
     : dbPath_(std::move(dbPath))
 {
@@ -496,7 +527,7 @@ bool MemorySqliteStore::SaveRelation(const MemoryRelation& relation)
     return SaveRelationUnlocked(relation);
 }
 
-bool MemorySqliteStore::RunInTransaction(const std::function<bool()>& work)
+bool MemorySqliteStore::RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
@@ -506,7 +537,8 @@ bool MemorySqliteStore::RunInTransaction(const std::function<bool()>& work)
         LogSqliteError(db_, "RunInTransaction::begin");
         return false;
     }
-    bool ok = work();
+    SqliteStoreTransaction transaction(*this);
+    bool ok = work(transaction);
     if (ok) {
         ok = ExecuteUnlocked("COMMIT;");
         if (!ok) {

@@ -17,7 +17,7 @@ using namespace agent_memory;
 
 namespace {
 
-class InMemoryStore : public MemoryStore
+class InMemoryStore : public MemoryStore, public MemoryStoreTransaction
 {
 public:
     bool Initialize() override { return true; }
@@ -49,7 +49,7 @@ public:
         return true;
     }
     bool MarkEntityObsolete(const std::string&, const std::string&) override { return true; }
-    bool RunInTransaction(const std::function<bool()>& work) override { return work(); }
+    bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work) override { return work(*this); }
     std::string LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override
     {
         auto it = cursors.find(agentId + ":" + sessionId);
@@ -249,12 +249,12 @@ bool TestMemoryUpdateWriter()
     relation.agentId = "agent-1";
     update.relations.push_back(relation);
 
-    auto sessionWrite = writer.SaveSessionSummary("agent-1", "session-1", "user: hello", {"session://session-1"});
+    auto sessionWrite = writer.SaveSessionSummary(store, "agent-1", "session-1", "user: hello", {"session://session-1"});
     if (!sessionWrite.succeeded || sessionWrite.savedSummaries != 1) {
         std::cerr << "writer failed to save session summary\n";
         return false;
     }
-    auto updateWrite = writer.SaveUpdate("agent-1", "session-1", update, {"session://session-1"});
+    auto updateWrite = writer.SaveUpdate(store, "agent-1", "session-1", update, {"session://session-1"});
     if (!updateWrite.succeeded || updateWrite.savedSummaries != 2 || updateWrite.savedEntities != 1 ||
         updateWrite.savedRelations != 1) {
         std::cerr << "writer failed to save update\n";
@@ -286,7 +286,7 @@ bool TestMemoryUpdateWriterFailureStopsUpdate()
     relation.agentId = "agent-1";
     update.relations.push_back(relation);
 
-    auto write = writer.SaveUpdate("agent-1", "session-1", update, {"session://session-1#event:1"});
+    auto write = writer.SaveUpdate(store, "agent-1", "session-1", update, {"session://session-1#event:1"});
     if (write.succeeded || write.savedEntities != 0 || write.savedRelations != 0) {
         std::cerr << "writer should fail without reporting partial saves\n";
         return false;

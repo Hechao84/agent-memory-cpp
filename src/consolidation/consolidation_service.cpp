@@ -44,11 +44,12 @@ MemoryConsolidationResult ConsolidationService::Consolidate(const MemoryConsolid
                      !update.entities.empty() || !update.relations.empty();
     MemoryUpdateWriteResult sessionWrite;
     MemoryUpdateWriteResult updateWrite;
-    bool ok = writer_.RunInTransaction([&]() {
-        sessionWrite = writer_.SaveSessionSummary(request.agentId, buildResult.sessionId, buildResult.sessionSummary,
-                                                 buildResult.sessionSourceRefs);
+    bool ok = writer_.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+        sessionWrite = writer_.SaveSessionSummary(transaction, request.agentId, buildResult.sessionId,
+                                                 buildResult.sessionSummary, buildResult.sessionSourceRefs);
         if (hasUpdate) {
-            updateWrite = writer_.SaveUpdate(request.agentId, buildResult.sessionId, update, buildResult.batch.sourceRefs);
+            updateWrite = writer_.SaveUpdate(transaction, request.agentId, buildResult.sessionId, update,
+                                            buildResult.batch.sourceRefs);
         }
         return sessionWrite.succeeded && updateWrite.succeeded;
     });
