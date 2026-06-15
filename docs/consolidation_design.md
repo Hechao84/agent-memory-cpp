@@ -76,9 +76,11 @@ BuiltinMemoryRuntime::Consolidate
 
 处理顺序：
 
-1. 如果调用方传入 `ModelClient`，优先使用 `LlmLongTermMemoryProcessor`。
-2. 如果 LLM 未产生有效 update，且 fallback processor 存在，则使用规则抽取。
-3. `fallbackUsed=true` 表示使用了规则回退。
+1. 如果 Runtime 提供了内置 `ModelClient`，或调用方显式传入 `ModelClient*`，优先使用 `LlmLongTermMemoryProcessor`。
+2. `Consolidate(request)` 使用 `MemoryConfig.model` 配置的内置模型；`Consolidate(request, model)` 只使用显式传入模型。
+3. `Consolidate(request, nullptr)` 表示显式禁用模型，只走规则抽取。
+4. 如果 LLM 未产生有效 update，且 fallback processor 存在，则使用规则抽取。
+5. `fallbackUsed=true` 表示使用了规则回退。
 
 规则处理器当前识别：
 

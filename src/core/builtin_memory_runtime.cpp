@@ -24,6 +24,39 @@ struct BuiltinMemoryRuntimeImpl
     mutable std::mutex consolidationMutex;
 };
 
+MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
+                                              const MemoryConsolidationRequest& request,
+                                              ModelClient* model)
+{
+    ConsolidationService* consolidationService = nullptr;
+    MemoryStore* store = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(impl.mutex);
+        consolidationService = impl.services->consolidationService.get();
+        store = impl.services->store.get();
+    }
+
+    if (consolidationService == nullptr) {
+        MemoryConsolidationResult result;
+        result.error = {"consolidation_unavailable", "consolidation service unavailable", "", false};
+        return result;
+    }
+
+    std::lock_guard<std::mutex> consolidationLock(impl.consolidationMutex);
+    std::string startCursor = request.forceReprocess || store == nullptr ? std::string() : store->LoadConsolidationCursor(request.agentId, request.sessionId);
+    std::vector<MemoryEvent> events = store
+        ? store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor)
+        : std::vector<MemoryEvent>();
+    MemoryConsolidationResult result = consolidationService->Consolidate(request, events, model);
+    if (result.succeeded && store != nullptr && !store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor)) {
+        result.succeeded = false;
+        result.error = {"cursor_save_failed", "failed to persist consolidation cursor", "", false};
+        std::lock_guard<std::mutex> lock(impl.mutex);
+        impl.lastRuntimeError = result.error.message;
+    }
+    return result;
+}
+
 BuiltinMemoryRuntime::BuiltinMemoryRuntime(MemoryConfig config)
     : MemoryRuntime(std::move(config)), impl_(std::make_unique<BuiltinMemoryRuntimeImpl>())
 {
@@ -111,38 +144,17 @@ MemoryPayloadReadResult BuiltinMemoryRuntime::ReadPayload(const std::string& uri
 
 MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolidationRequest& request)
 {
-    return Consolidate(request, nullptr);
+    ModelClient* model = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(impl_->mutex);
+        model = impl_->services->modelClient.get();
+    }
+    return ConsolidateWithModel(*impl_, request, model);
 }
 
 MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolidationRequest& request, ModelClient* model)
 {
-    ConsolidationService* consolidationService = nullptr;
-    MemoryStore* store = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        consolidationService = impl_->services->consolidationService.get();
-        store = impl_->services->store.get();
-    }
-
-    if (consolidationService == nullptr) {
-        MemoryConsolidationResult result;
-        result.error = {"consolidation_unavailable", "consolidation service unavailable", "", false};
-        return result;
-    }
-
-    std::lock_guard<std::mutex> consolidationLock(impl_->consolidationMutex);
-    std::string startCursor = request.forceReprocess || store == nullptr ? std::string() : store->LoadConsolidationCursor(request.agentId, request.sessionId);
-    std::vector<MemoryEvent> events = store
-        ? store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor)
-        : std::vector<MemoryEvent>();
-    MemoryConsolidationResult result = consolidationService->Consolidate(request, events, model);
-    if (result.succeeded && store != nullptr && !store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor)) {
-        result.succeeded = false;
-        result.error = {"cursor_save_failed", "failed to persist consolidation cursor", "", false};
-        std::lock_guard<std::mutex> lock(impl_->mutex);
-        impl_->lastRuntimeError = result.error.message;
-    }
-    return result;
+    return ConsolidateWithModel(*impl_, request, model);
 }
 
 MemorySearchResponse BuiltinMemoryRuntime::SearchMemory(const MemorySearchRequest& request)

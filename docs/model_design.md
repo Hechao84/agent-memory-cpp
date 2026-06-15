@@ -2,7 +2,7 @@
 
 ## 模块目标
 
-Model 模块为长期记忆抽取提供可插拔模型能力。SDK 模式下业务可实现 `ModelClient`；Server 模式下可通过配置加载 OpenAI-compatible 或 Anthropic-compatible 客户端。
+Model 模块为长期记忆抽取提供可插拔模型能力。SDK 和 Server 都可通过 `MemoryConfig.model` 加载 OpenAI-compatible 或 Anthropic-compatible 内置客户端；SDK 也可实现 `ModelClient` 并在单次 `Consolidate` 调用中显式传入宿主模型。
 
 ## 主要文件
 
@@ -36,7 +36,7 @@ public:
 
 ## 配置结构
 
-Server 模式使用 `model` 配置对象：
+SDK 使用 `MemoryConfig.model` 配置内置模型；Server 模式的顶层 `model` 配置会在启动时映射到同一结构：
 
 | 字段 | 说明 |
 | --- | --- |
@@ -108,7 +108,7 @@ Server 模式使用 `model` 配置对象：
 
 ## 加载逻辑
 
-`LoadModelClientFromJson` 按 `formatType` 创建模型客户端：
+`LoadModelClientFromConfig` 和 `LoadModelClientFromJson` 按 `formatType` 创建模型客户端：
 
 - `openai` -> `OpenAiModelClient`
 - `anthropic` -> `AnthropicModelClient`
@@ -125,10 +125,13 @@ Server 模式使用 `model` 配置对象：
 ## 与其他模块关系
 
 ```text
+BuiltinMemoryRuntime
+  -> RuntimeServices::modelClient
+     -> OpenAiModelClient / AnthropicModelClient
 ConsolidationService
   -> LlmLongTermMemoryProcessor
      -> ModelClient
-        -> OpenAiModelClient / AnthropicModelClient / Host implementation
+        -> Runtime builtin model / Host implementation
 ```
 
-如果模型不可用或返回空结果，Consolidation 模块会使用规则处理器回退，除非 Server 配置了严格模型模式并在启动阶段失败。
+`Consolidate(request)` 使用 runtime 内置模型；`Consolidate(request, &model)` 使用宿主显式传入模型并覆盖内置模型；`Consolidate(request, nullptr)` 表示本次调用禁用模型。如果模型不可用或返回空结果，Consolidation 模块会使用规则处理器回退；Server 配置 `model.strict=true` 时，模型配置校验失败会导致启动失败。

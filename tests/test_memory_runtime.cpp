@@ -3,6 +3,8 @@
 #include <iostream>
 #include <mutex>
 #include <string>
+
+#include "model_http_client.h"
 #include <thread>
 #include <vector>
 
@@ -11,6 +13,29 @@
 namespace fs = std::filesystem;
 
 using namespace agent_memory;
+
+namespace {
+
+class StaticModelClient : public ModelClient
+{
+public:
+    explicit StaticModelClient(std::string response) : response_(std::move(response)) {}
+
+    ModelInvokeResult GenerateMemoryUpdate(const std::string&) override
+    {
+        ++calls;
+        ModelInvokeResult result;
+        result.text = response_;
+        return result;
+    }
+
+    int calls{0};
+
+private:
+    std::string response_;
+};
+
+} // namespace
 
 int main()
 {
@@ -220,6 +245,101 @@ int main()
         std::cerr << "BuildContext query structured result failed\n";
         return 1;
     }
+
+    auto builtinModelPath = fs::temp_directory_path() / "agent_memory_cpp_builtin_model_test";
+    fs::remove_all(builtinModelPath);
+    MemoryConfig builtinModelConfig;
+    builtinModelConfig.dataPath = builtinModelPath.string();
+    builtinModelConfig.model.enabled = true;
+    builtinModelConfig.model.formatType = "openai";
+    builtinModelConfig.model.baseUrl = "https://example.com/v1";
+    builtinModelConfig.model.modelName = "test-model";
+    int builtinModelCalls = 0;
+    SetJsonPostTransportForTesting([&builtinModelCalls](const JsonPostRequest&) {
+        ++builtinModelCalls;
+        return HttpResponse{200, R"({"choices":[{"message":{"content":"{\"topicSummaries\":[\"Discussed runtime model config\"],\"profileSummaries\":[],\"entities\":[{\"id\":\"entity:runtime.model\",\"entityType\":\"topic\",\"name\":\"Runtime model\",\"summary\":\"Runtime model config\",\"confidence\":0.9}],\"relations\":[]}"}}]})"};
+    });
+    BuiltinMemoryRuntime builtinModelRuntime(builtinModelConfig);
+    MemoryEvent builtinModelEvent = event;
+    builtinModelEvent.agentId = "agent-model";
+    builtinModelEvent.sessionId = "session-model";
+    builtinModelEvent.content = "Please remember runtime model config";
+    if (!builtinModelRuntime.AppendEvent(builtinModelEvent)) {
+        ResetJsonPostTransportForTesting();
+        std::cerr << "builtin model append failed\n";
+        return 1;
+    }
+    MemoryConsolidationRequest builtinModelRequest;
+    builtinModelRequest.agentId = "agent-model";
+    builtinModelRequest.sessionId = "session-model";
+    auto builtinModelResult = builtinModelRuntime.Consolidate(builtinModelRequest);
+    ResetJsonPostTransportForTesting();
+    if (!builtinModelResult || builtinModelResult.fallbackUsed || builtinModelResult.savedEntities != 1 || builtinModelCalls != 1) {
+        std::cerr << "Consolidate(request) should use configured builtin model\n";
+        return 1;
+    }
+    fs::remove_all(builtinModelPath);
+
+    auto explicitDisablePath = fs::temp_directory_path() / "agent_memory_cpp_disable_model_test";
+    fs::remove_all(explicitDisablePath);
+    MemoryConfig explicitDisableConfig = builtinModelConfig;
+    explicitDisableConfig.dataPath = explicitDisablePath.string();
+    int disabledModelCalls = 0;
+    SetJsonPostTransportForTesting([&disabledModelCalls](const JsonPostRequest&) {
+        ++disabledModelCalls;
+        return HttpResponse{200, R"({"choices":[{"message":{"content":"{}"}}]})"};
+    });
+    BuiltinMemoryRuntime explicitDisableRuntime(explicitDisableConfig);
+    MemoryEvent explicitDisableEvent = event;
+    explicitDisableEvent.agentId = "agent-disable";
+    explicitDisableEvent.sessionId = "session-disable";
+    explicitDisableEvent.content = "I prefer explicit model disabling";
+    if (!explicitDisableRuntime.AppendEvent(explicitDisableEvent)) {
+        ResetJsonPostTransportForTesting();
+        std::cerr << "explicit disable append failed\n";
+        return 1;
+    }
+    MemoryConsolidationRequest explicitDisableRequest;
+    explicitDisableRequest.agentId = "agent-disable";
+    explicitDisableRequest.sessionId = "session-disable";
+    auto explicitDisableResult = explicitDisableRuntime.Consolidate(explicitDisableRequest, nullptr);
+    ResetJsonPostTransportForTesting();
+    if (!explicitDisableResult || !explicitDisableResult.fallbackUsed || disabledModelCalls != 0) {
+        std::cerr << "Consolidate(request, nullptr) should disable configured builtin model\n";
+        return 1;
+    }
+    fs::remove_all(explicitDisablePath);
+
+    auto hostModelPath = fs::temp_directory_path() / "agent_memory_cpp_host_model_test";
+    fs::remove_all(hostModelPath);
+    MemoryConfig hostModelConfig = builtinModelConfig;
+    hostModelConfig.dataPath = hostModelPath.string();
+    int ignoredBuiltinCalls = 0;
+    SetJsonPostTransportForTesting([&ignoredBuiltinCalls](const JsonPostRequest&) {
+        ++ignoredBuiltinCalls;
+        return HttpResponse{200, R"({"choices":[{"message":{"content":"{}"}}]})"};
+    });
+    BuiltinMemoryRuntime hostModelRuntime(hostModelConfig);
+    MemoryEvent hostModelEvent = event;
+    hostModelEvent.agentId = "agent-host";
+    hostModelEvent.sessionId = "session-host";
+    hostModelEvent.content = "Please remember host model precedence";
+    if (!hostModelRuntime.AppendEvent(hostModelEvent)) {
+        ResetJsonPostTransportForTesting();
+        std::cerr << "host model append failed\n";
+        return 1;
+    }
+    StaticModelClient hostModel(R"({"topicSummaries":["Host model was used"],"profileSummaries":[],"entities":[{"id":"entity:host.model","entityType":"topic","name":"Host model","summary":"Host model precedence","confidence":0.9}],"relations":[]})");
+    MemoryConsolidationRequest hostModelRequest;
+    hostModelRequest.agentId = "agent-host";
+    hostModelRequest.sessionId = "session-host";
+    auto hostModelResult = hostModelRuntime.Consolidate(hostModelRequest, &hostModel);
+    ResetJsonPostTransportForTesting();
+    if (!hostModelResult || hostModelResult.fallbackUsed || hostModelResult.savedEntities != 1 || hostModel.calls != 1 || ignoredBuiltinCalls != 0) {
+        std::cerr << "explicit host model should override configured builtin model\n";
+        return 1;
+    }
+    fs::remove_all(hostModelPath);
 
     auto stats = runtime.GetStats();
     if (stats.stats.events < 1 || stats.stats.payloads < 1 || stats.stats.summaries < 1) {

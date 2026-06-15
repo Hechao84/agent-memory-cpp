@@ -172,6 +172,10 @@ if(AGENT_MEMORY_BUILD_TESTS)
     enable_testing()
 
     agent_memory_add_test(agent_memory_tests tests/test_memory_runtime.cpp)
+    target_include_directories(agent_memory_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/model
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
+    )
 
     agent_memory_add_test(consolidation_tests tests/test_consolidation.cpp)
     target_include_directories(consolidation_tests PRIVATE

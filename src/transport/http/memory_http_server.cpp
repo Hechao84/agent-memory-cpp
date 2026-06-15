@@ -4,7 +4,6 @@
 #include <utility>
 
 #include "agent_memory/builtin_memory_runtime.h"
-#include "agent_memory/model_client.h"
 #include "json_memory_codec.h"
 #include "memory_mcp_protocol.h"
 
@@ -26,10 +25,10 @@ bool ConstantTimeEquals(const std::string& lhs, const std::string& rhs)
 
 } // namespace
 
-MemoryHttpServer::MemoryHttpServer(BuiltinMemoryRuntime& runtime, ModelClient* model, std::string apiToken, bool debugErrors, size_t maxPayloadBytes, std::string mcpPath, size_t maxMcpMessageBytes)
-    : runtime_(runtime), model_(model), apiToken_(std::move(apiToken)), debugErrors_(debugErrors), maxPayloadBytes_(maxPayloadBytes),
+MemoryHttpServer::MemoryHttpServer(BuiltinMemoryRuntime& runtime, std::string apiToken, bool debugErrors, size_t maxPayloadBytes, std::string mcpPath, size_t maxMcpMessageBytes)
+    : runtime_(runtime), apiToken_(std::move(apiToken)), debugErrors_(debugErrors), maxPayloadBytes_(maxPayloadBytes),
       mcpPath_(std::move(mcpPath)), maxMcpMessageBytes_(maxMcpMessageBytes),
-      mcpProtocol_(std::make_unique<MemoryMcpProtocol>(runtime_, model_, debugErrors_))
+      mcpProtocol_(std::make_unique<MemoryMcpProtocol>(runtime_, debugErrors_))
 {
 }
 
@@ -73,7 +72,7 @@ void MemoryHttpServer::RegisterRoutes(httplib::Server& server)
 
     server.Post("/v1/consolidate", [this](const httplib::Request& req, httplib::Response& res) {
         HandleJsonPost(req, res, [this](const nlohmann::json& j) {
-            auto result = runtime_.Consolidate(ConsolidationRequestFromJson(j), model_);
+            auto result = runtime_.Consolidate(ConsolidationRequestFromJson(j));
             return result ? SuccessEnvelope(ConsolidationResultToJson(result)) : ErrorEnvelope(result.error);
         });
     });

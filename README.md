@@ -212,7 +212,21 @@ For shared or non-local deployments, configure `server.auth.apiToken` and avoid 
 
 ## LLM Consolidation
 
-SDK mode can provide a host model implementation:
+SDK mode can configure a built-in OpenAI-compatible or Anthropic-compatible model:
+
+```cpp
+agent_memory::MemoryConfig config;
+config.model.enabled = true;
+config.model.formatType = "openai";
+config.model.baseUrl = "https://example.com/v1";
+config.model.apiKey = "your-api-key";
+config.model.modelName = "your-model";
+
+agent_memory::BuiltinMemoryRuntime runtime(config);
+runtime.Consolidate(request);
+```
+
+SDK mode can also provide a host model implementation:
 
 ```cpp
 class MyModelClient : public agent_memory::ModelClient
@@ -224,7 +238,7 @@ public:
 runtime.Consolidate(request, &modelClient);
 ```
 
-Server mode supports OpenAI-compatible and Anthropic-compatible model configs through the `model` object. If model loading or invocation fails, consolidation falls back to rule-based extraction unless `model.strict` is `true`.
+`Consolidate(request)` uses the runtime configured model; `Consolidate(request, &modelClient)` uses the explicit host model; `Consolidate(request, nullptr)` explicitly disables model use for that call. Server mode maps the `model` object into the same runtime model config. If model loading or invocation fails, consolidation falls back to rule-based extraction unless server `model.strict` rejects invalid config at startup.
 
 ## Test
 

@@ -113,8 +113,9 @@ parse cli
   -> validate options
   -> CreateServerSetup
      -> PrepareDataPath
-     -> LoadModelClientFromJson
+     -> map server model config to MemoryConfig.model
      -> BuiltinMemoryRuntime
+        -> LoadModelClientFromConfig
   -> httplib::Server
   -> MemoryHttpServer::RegisterRoutes
   -> listen(host, port)

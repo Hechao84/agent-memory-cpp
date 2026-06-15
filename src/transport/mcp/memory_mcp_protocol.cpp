@@ -3,13 +3,12 @@
 #include <iostream>
 
 #include "agent_memory/builtin_memory_runtime.h"
-#include "agent_memory/model_client.h"
 #include "json_memory_codec.h"
 
 namespace agent_memory {
 
-MemoryMcpProtocol::MemoryMcpProtocol(BuiltinMemoryRuntime& runtime, ModelClient* model, bool debugErrors)
-    : runtime_(runtime), model_(model), debugErrors_(debugErrors)
+MemoryMcpProtocol::MemoryMcpProtocol(BuiltinMemoryRuntime& runtime, bool debugErrors)
+    : runtime_(runtime), debugErrors_(debugErrors)
 {
     InitToolHandlers();
     cachedTools_ = BuildToolsList();
@@ -35,7 +34,7 @@ void MemoryMcpProtocol::InitToolHandlers()
         return MakeTextResult(result ? SuccessEnvelope({{"uri", uri}, {"content", result.content}}) : ErrorEnvelope(result.error));
     };
     toolHandlers_["memory_consolidate"] = [this](const nlohmann::json& args) {
-        auto result = runtime_.Consolidate(ConsolidationRequestFromJson(args), model_);
+        auto result = runtime_.Consolidate(ConsolidationRequestFromJson(args));
         return MakeTextResult(result ? SuccessEnvelope(ConsolidationResultToJson(result)) : ErrorEnvelope(result.error));
     };
     toolHandlers_["memory_search"] = [this](const nlohmann::json& args) {

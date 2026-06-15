@@ -114,7 +114,7 @@ int Run(int argc, char* argv[])
         server.stop();
     });
     ApplyHttpOptions(server, options.http);
-    MemoryHttpServer memoryServer(*setup.runtime, setup.model.get(), options.apiToken, options.debugErrors,
+    MemoryHttpServer memoryServer(*setup.runtime, options.apiToken, options.debugErrors,
                                   options.http.maxPayloadBytes, options.mcp.path, options.mcp.maxMessageBytes);
     memoryServer.RegisterRoutes(server);
 
@@ -124,7 +124,7 @@ int Run(int argc, char* argv[])
 
     std::cout << "memory-server starting on " << options.http.host << ":" << options.http.port
               << " data=" << setup.config.dataPath
-              << " model=" << (setup.model ? "enabled" : "disabled") << std::endl;
+              << " model=" << (setup.config.model.enabled ? "enabled" : "disabled") << std::endl;
 
     bool listened = server.listen(options.http.host, options.http.port);
     gStopRequested = 1;

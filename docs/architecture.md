@@ -168,7 +168,7 @@ Consolidate
   -> SaveConsolidationCursor
 ```
 
-如果传入 `ModelClient` 且模型返回有效更新，则使用 LLM 抽取结果；否则使用规则处理器回退。
+`Consolidate(request)` 会使用 `MemoryConfig.model` 初始化的 runtime 内置模型；`Consolidate(request, model)` 使用显式传入模型；`Consolidate(request, nullptr)` 表示显式禁用模型。只要有效模型返回有效更新，就使用 LLM 抽取结果；否则使用规则处理器回退。
 
 ### 检索长期记忆
 
@@ -195,10 +195,18 @@ SearchMemory
 - `BuildContext(const MemoryContextRequest&)`
 - `WritePayload(const MemoryPayloadWriteRequest&)`
 - `ReadPayload(const std::string& uri)`
-- `Consolidate(const MemoryConsolidationRequest&)`
-- `Consolidate(const MemoryConsolidationRequest&, ModelClient*)`
+- `Consolidate(const MemoryConsolidationRequest&)`：使用 runtime 内置模型；未配置时规则抽取
+- `Consolidate(const MemoryConsolidationRequest&, ModelClient*)`：使用显式传入模型；传 `nullptr` 表示禁用模型
 - `SearchMemory(const MemorySearchRequest&)`
 - `GetStats() const`
+
+两个 `Consolidate` 重载的区别：
+
+| 接口 | 模型来源 | 注意事项 |
+| --- | --- | --- |
+| `Consolidate(request)` | `MemoryConfig.model` 配置的内置模型 | 适合 SDK/Server 默认路径；无模型时规则抽取 |
+| `Consolidate(request, &model)` | 调用方显式传入的宿主模型 | 覆盖内置模型，宿主需保证模型对象在调用期间有效 |
+| `Consolidate(request, nullptr)` | 无模型 | 显式禁用模型，不会回退使用内置模型 |
 
 ### RESTful API
 
@@ -250,7 +258,7 @@ MemoryHttpServer / MemoryMcpProtocol
 - `MemoryRuntime` 是所有接入层依赖的统一业务接口。
 - `MemoryStore` 是所有核心服务依赖的持久化接口。
 - `LongTermMemoryProcessor` 是长期记忆抽取策略接口。
-- `ModelClient` 是模型能力输入接口，可由 SDK 宿主或服务端模型配置提供。
+- `ModelClient` 是模型能力输入接口，可由 runtime 内置模型配置创建，也可由 SDK 宿主显式传入。
 - `json_memory_codec` 是 HTTP/MCP 与 C++ 类型之间的边界层。
 
 ## 运行时与并发模型
@@ -262,7 +270,7 @@ MemoryHttpServer / MemoryMcpProtocol
 
 ## 存储布局
 
-默认数据目录由 `MemoryConfig.dataPath` 或服务端 `memory.dataPath` 指定。
+默认数据目录由 `MemoryConfig.dataPath` 或服务端 `memory.dataPath` 指定；内置模型由 `MemoryConfig.model` 或服务端 `model` 配置指定。
 
 ```text
 <dataPath>/

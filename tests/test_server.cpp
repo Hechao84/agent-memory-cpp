@@ -131,7 +131,7 @@ bool TestHttpLimits()
     MemoryConfig config;
     config.dataPath = dataPath.string();
     BuiltinMemoryRuntime runtime(config);
-    MemoryHttpServer memoryServer(runtime, nullptr, std::string(), true, 10, "/mcp", 128);
+    MemoryHttpServer memoryServer(runtime, std::string(), true, 10, "/mcp", 128);
     httplib::Server server;
     memoryServer.RegisterRoutes(server);
     int port = server.bind_to_any_port("127.0.0.1");

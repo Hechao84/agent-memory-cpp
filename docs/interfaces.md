@@ -12,6 +12,7 @@ SDK 初始化参数。
 | `tokenBudget` | integer | 否 | `4096` | 默认上下文 token 预算 |
 | `offloadThresholdChars` | integer | 否 | `8000` | payload 卸载字符阈值 |
 | `enablePayloadOffload` | boolean | 否 | `false` | 是否启用 payload 文件卸载 |
+| `model` | object | 否 | disabled | SDK 内置模型配置；字段见下方内置模型配置，`enabled=false` 表示不启用 |
 
 ### MemoryEvent
 
@@ -197,6 +198,11 @@ config.dataPath = "./data";
 config.enablePayloadOffload = true;
 config.offloadThresholdChars = 8000;
 config.tokenBudget = 4096;
+config.model.enabled = true;
+config.model.formatType = "openai";
+config.model.baseUrl = "https://example.com/v1";
+config.model.apiKey = "your-api-key";
+config.model.modelName = "your-model";
 
 agent_memory::BuiltinMemoryRuntime runtime(config);
 ```
@@ -266,6 +272,8 @@ request.forceReprocess = false;
 auto result = runtime.Consolidate(request);
 ```
 
+`Consolidate(request)` 会优先使用 `MemoryConfig.model` 中配置的内置模型；如果未配置、配置不可用或模型未产生有效更新，则使用规则抽取。
+
 ### 使用宿主模型
 
 ```cpp
@@ -283,6 +291,21 @@ public:
 MyModelClient model;
 auto result = runtime.Consolidate(request, &model);
 ```
+
+### Consolidate 重载区别和注意事项
+
+| 调用方式 | 模型来源 | 行为 |
+| --- | --- | --- |
+| `Consolidate(request)` | `MemoryConfig.model` | 优先使用 runtime 内置模型；未配置或不可用时规则抽取 |
+| `Consolidate(request, &model)` | 显式传入的宿主模型 | 只使用传入模型，优先级高于内置模型 |
+| `Consolidate(request, nullptr)` | 无 | 显式禁用模型，只走规则抽取 |
+
+注意事项：
+
+- 不要把 `Consolidate(request, nullptr)` 理解为“使用内置模型”；它表示本次调用强制不用模型。
+- 宿主传入的 `ModelClient*` 生命周期必须覆盖整个调用过程。
+- 如果多个线程并发调用带同一个宿主 `ModelClient*` 的重载，宿主模型实现需要自行保证线程安全，或由调用方串行化。
+- LLM 返回无效 JSON、空更新或调用失败时，Consolidation 会回退到规则抽取并设置 `fallbackUsed=true`。
 
 ### 检索记忆
 

@@ -10,12 +10,10 @@
 namespace agent_memory {
 
 class BuiltinMemoryRuntime;
-class ModelClient;
-
 class MemoryMcpProtocol
 {
 public:
-    MemoryMcpProtocol(BuiltinMemoryRuntime& runtime, ModelClient* model, bool debugErrors = false);
+    MemoryMcpProtocol(BuiltinMemoryRuntime& runtime, bool debugErrors = false);
     nlohmann::json HandleJsonRpc(const nlohmann::json& request);
     std::string HandleJsonRpcText(const std::string& body);
     nlohmann::json MakeError(const nlohmann::json& id, int code, const std::string& message);
@@ -33,7 +31,6 @@ private:
     nlohmann::json BuildToolsList();
 
     BuiltinMemoryRuntime& runtime_;
-    ModelClient* model_;
     bool debugErrors_;
     nlohmann::json cachedTools_;
     std::unordered_map<std::string, std::function<nlohmann::json(const nlohmann::json&)>> toolHandlers_;

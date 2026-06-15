@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "agent_memory/config.h"
 #include "agent_memory/model_client.h"
 
 namespace agent_memory {
@@ -17,6 +18,7 @@ struct ModelClientLoadResult
     explicit operator bool() const { return client != nullptr; }
 };
 
+ModelClientLoadResult LoadModelClientFromConfig(const MemoryModelConfig& config);
 ModelClientLoadResult LoadModelClientFromJson(const nlohmann::json& j);
 ModelClientLoadResult LoadModelClientWithResult(const std::string& jsonFile);
 

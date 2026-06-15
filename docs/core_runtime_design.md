@@ -35,7 +35,7 @@ Core Runtime 是项目的运行时编排层，负责把事件、上下文、载�
 
 `BuiltinMemoryRuntimeImpl` 持有：
 
-- `RuntimeServices services`：Store、PayloadService、ContextBuilder、ConsolidationService 等。
+- `RuntimeServices services`：Store、PayloadService、ContextBuilder、ConsolidationService、内置 ModelClient 等。
 - `events`：运行时内存事件快照。
 - `payloads`：运行时内存 payload 引用快照。
 - `mutex`：保护内部状态。
@@ -47,6 +47,7 @@ Core Runtime 是项目的运行时编排层，负责把事件、上下文、载�
 ```text
 CreateRuntimeServices
   -> CreateRuntimeStore
+  -> LoadModelClientFromConfig(config.model)
   -> PayloadService(config, dataPath, store)
   -> ContextBuilder(config, store)
   -> RuleBasedLongTermMemoryProcessor
@@ -76,10 +77,11 @@ CreateRuntimeServices
 
 ### Consolidate
 
-1. 读取当前 agent/session 的 consolidation cursor。
-2. 读取游标之后的事件。
-3. 调用 `ConsolidationService::Consolidate`。
-4. 成功后保存新游标。
+1. `Consolidate(request)` 从 `RuntimeServices::modelClient` 获取内置模型；`Consolidate(request, model)` 使用显式传入模型，`nullptr` 表示禁用模型。
+2. 读取当前 agent/session 的 consolidation cursor。
+3. 读取游标之后的事件。
+4. 调用 `ConsolidationService::Consolidate`。
+5. 成功后保存新游标。
 
 ## 并发设计
 
@@ -97,6 +99,16 @@ CreateRuntimeServices
 | `tokenBudget` | `4096` | 默认上下文 token 预算 |
 | `offloadThresholdChars` | `8000` | payload 卸载字符阈值 |
 | `enablePayloadOffload` | `false` | 是否启用 payload 文件卸载 |
+| `model.enabled` | `false` | 是否启用 SDK/runtime 内置模型 |
+| `model.formatType` | `openai` | 内置模型协议，`openai` 或 `anthropic` |
+| `model.baseUrl` | 空 | 模型服务地址 |
+| `model.apiKey` | 空 | 模型 API Key |
+| `model.modelName` | 空 | 模型名称 |
+| `model.timeoutSeconds` | `60` | 模型请求超时 |
+| `model.temperature` | `0` | 模型温度 |
+| `model.maxTokens` | `0` | 最大输出 token；Anthropic 未设置时使用 4096 |
+| `model.headers` | 空 | 额外 HTTP 请求头 |
+| `model.extraParams` | `{}` | 额外请求体参数 |
 
 ## 错误处理
 

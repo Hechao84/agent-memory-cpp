@@ -7,6 +7,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 
 #include "model_client_factory.h"
@@ -53,31 +54,89 @@ std::string PrepareDataPath(const std::string& dataPath)
     return canonical.string();
 }
 
+std::string LoadString(const nlohmann::json& j, const std::string& key, const std::string& defaultValue = "")
+{
+    if (!j.contains(key) || !j[key].is_string()) {
+        return defaultValue;
+    }
+    return j[key].get<std::string>();
+}
+
+int LoadInt(const nlohmann::json& j, const std::string& key, int defaultValue)
+{
+    if (!j.contains(key) || !j[key].is_number_integer()) {
+        return defaultValue;
+    }
+    return j[key].get<int>();
+}
+
+double LoadDouble(const nlohmann::json& j, const std::string& key, double defaultValue)
+{
+    if (!j.contains(key) || !j[key].is_number()) {
+        return defaultValue;
+    }
+    return j[key].get<double>();
+}
+
+void LoadHeaders(const nlohmann::json& j, std::unordered_map<std::string, std::string>& headers)
+{
+    if (!j.contains("headers") || !j["headers"].is_object()) {
+        return;
+    }
+    for (auto it = j["headers"].begin(); it != j["headers"].end(); ++it) {
+        if (it.value().is_string()) {
+            headers[it.key()] = it.value().get<std::string>();
+        }
+    }
+}
+
+MemoryModelConfig ModelConfigFromJson(const nlohmann::json& j)
+{
+    MemoryModelConfig config;
+    if (!j.is_object() || j.empty()) {
+        return config;
+    }
+    config.enabled = true;
+    config.formatType = LoadString(j, "formatType", config.formatType);
+    config.baseUrl = LoadString(j, "baseUrl");
+    config.apiKey = LoadString(j, "apiKey");
+    config.modelName = LoadString(j, "modelName");
+    config.organization = LoadString(j, "organization");
+    config.anthropicVersion = LoadString(j, "anthropicVersion", LoadString(j, "anthropic-version", config.anthropicVersion));
+    config.timeoutSeconds = LoadInt(j, "timeoutSeconds", config.timeoutSeconds);
+    config.temperature = LoadDouble(j, "temperature", config.temperature);
+    config.maxTokens = LoadInt(j, "maxTokens", LoadInt(j, "max_tokens", config.maxTokens));
+    if (j.contains("extraParams") && j["extraParams"].is_object()) {
+        config.extraParams = j["extraParams"];
+    }
+    LoadHeaders(j, config.headers);
+    return config;
+}
+
 } // namespace
 
 ServerSetup CreateServerSetup(const ServerOptions& options)
 {
-    std::unique_ptr<ModelClient> model;
-    if (!options.modelConfig.empty()) {
-        auto modelResult = LoadModelClientFromJson(options.modelConfig);
-        if (!modelResult && options.strictModelConfig) {
-            throw std::runtime_error(modelResult.error);
-        }
-        if (!modelResult) {
-            std::cerr << modelResult.error << ". Using rule-based consolidation.\n";
-        }
-        model = std::move(modelResult.client);
-    }
-
     MemoryConfig config;
     config.dataPath = PrepareDataPath(options.dataPath);
     config.enablePayloadOffload = options.enablePayloadOffload;
     config.offloadThresholdChars = options.offloadThreshold;
     config.tokenBudget = options.tokenBudget;
+    config.model = ModelConfigFromJson(options.modelConfig);
+    if (config.model.enabled) {
+        auto modelResult = LoadModelClientFromConfig(config.model);
+        if (!modelResult && options.strictModelConfig) {
+            throw std::runtime_error(modelResult.error);
+        }
+        if (!modelResult) {
+            std::cerr << modelResult.error << ". Using rule-based consolidation.\n";
+            config.model.enabled = false;
+        }
+    }
 
     auto runtime = std::make_unique<BuiltinMemoryRuntime>(config);
 
-    return {std::move(config), std::move(runtime), std::move(model)};
+    return {std::move(config), std::move(runtime)};
 }
 
 } // namespace agent_memory
