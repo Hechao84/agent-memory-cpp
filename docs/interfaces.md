@@ -28,7 +28,7 @@ SDK 初始化参数。
 | `toolCallId` | string | 否 | 空 | 工具调用 ID |
 | `toolName` | string | 否 | 空 | 工具名称 |
 | `payloadRef` | string | 否 | 空 | payload URI 引用 |
-| `metadata` | object | 否 | `{}` | 扩展元数据 |
+| `metadata` | object | 否 | `{}` | 扩展元数据，会随事件持久化 |
 | `timestamp` | string | 否 | 空 | 时间戳；为空时由存储层写入时间 |
 
 事件类型枚举：

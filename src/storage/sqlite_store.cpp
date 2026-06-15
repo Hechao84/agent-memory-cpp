@@ -132,6 +132,7 @@ MemoryEvent ReadEventRow(sqlite3_stmt* stmt)
     event.payloadRef = ColumnText(stmt, 6);
     event.toolCallId = ColumnText(stmt, 7);
     event.toolName = ColumnText(stmt, 8);
+    event.metadata = ParseJsonColumn(stmt, 9);
     return event;
 }
 
@@ -273,6 +274,7 @@ bool MemorySqliteStore::Initialize()
                    "payload_ref TEXT, "
                    "tool_call_id TEXT, "
                    "tool_name TEXT, "
+                   "metadata_json TEXT, "
                    "created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
                    ");") &&
            ExecuteUnlocked("CREATE TABLE IF NOT EXISTS memory_payloads ("
@@ -571,7 +573,7 @@ std::vector<MemoryEvent> MemorySqliteStore::LoadEventsAfterCursor(const std::str
     int cursorValue = CursorToInt(cursor);
 
     if (!sessionId.empty()) {
-        const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name "
+        const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
                           "FROM memory_events WHERE id > ? AND agent_id = ? AND session_id = ? "
                           "ORDER BY id ASC;";
         SQLiteStatement stmt(db_, sql);
@@ -585,7 +587,7 @@ std::vector<MemoryEvent> MemorySqliteStore::LoadEventsAfterCursor(const std::str
             events.push_back(ReadEventRow(stmt.get()));
         }
     } else {
-        const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name "
+        const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
                           "FROM memory_events WHERE id > ? AND agent_id = ? "
                           "ORDER BY id ASC;";
         SQLiteStatement stmt(db_, sql);
@@ -612,7 +614,7 @@ std::vector<MemoryEvent> MemorySqliteStore::LoadRecentEvents(const std::string& 
     }
 
     int effectiveLimit = limit > 0 ? limit : 20;
-    const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name "
+    const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
                       "FROM memory_events WHERE agent_id = ? AND (? = '' OR session_id = ?) "
                       "ORDER BY id DESC LIMIT ?;";
     SQLiteStatement stmt(db_, sql);
@@ -979,8 +981,8 @@ bool MemorySqliteStore::AddColumnIfMissingUnlocked(const std::string& tableName,
 bool MemorySqliteStore::SaveEventUnlocked(const MemoryEvent& event)
 {
     const char* sql = "INSERT INTO memory_events "
-                      "(agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name) "
-                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+                      "(agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json) "
+                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);";
     SQLiteStatement stmt(db_, sql);
     if (!stmt) {
         return false;
@@ -994,6 +996,8 @@ bool MemorySqliteStore::SaveEventUnlocked(const MemoryEvent& event)
     sqlite3_bind_text(stmt.get(), 6, event.payloadRef.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 7, event.toolCallId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 8, event.toolName.c_str(), -1, SQLITE_TRANSIENT);
+    std::string metadataJson = event.metadata.is_object() ? event.metadata.dump() : nlohmann::json::object().dump();
+    sqlite3_bind_text(stmt.get(), 9, metadataJson.c_str(), -1, SQLITE_TRANSIENT);
 
     if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
         LogSqliteError(db_, "SaveEvent::step");

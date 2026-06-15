@@ -37,7 +37,7 @@ Storage 模块负责记忆数据的持久化和检索，为运行时提供统一
 
 | 表 | 说明 |
 | --- | --- |
-| `memory_events` | 保存 agent/session 事件流 |
+| `memory_events` | 保存 agent/session 事件流和事件 metadata |
 | `memory_payloads` | 保存 agent/session 归属、payload URI、类型、摘要和元数据 |
 | `memory_summaries` | 保存会话、主题、画像等摘要 |
 | `memory_entities` | 保存长期记忆实体 |

@@ -39,6 +39,8 @@ MemoryEvent MakeEvent(const std::string& agentId, const std::string& sessionId, 
     event.sessionId = sessionId;
     event.role = role;
     event.content = content;
+    event.metadata["source"] = "sqlite-test";
+    event.metadata["content"] = content;
     return event;
 }
 
@@ -58,7 +60,8 @@ bool TestEventsAndCursors()
     }
 
     auto sessionEvents = store.LoadEventsAfterCursor("agent-1", "session-1", "");
-    if (sessionEvents.size() != 1 || sessionEvents[0].content != "first" || sessionEvents[0].storeCursor.empty()) {
+    if (sessionEvents.size() != 1 || sessionEvents[0].content != "first" || sessionEvents[0].storeCursor.empty() ||
+        sessionEvents[0].metadata["source"] != "sqlite-test" || sessionEvents[0].metadata["content"] != "first") {
         std::cerr << "session event query failed\n";
         return false;
     }
@@ -76,7 +79,7 @@ bool TestEventsAndCursors()
     }
 
     auto recent = store.LoadRecentEvents("agent-1", "", 1);
-    if (recent.size() != 1 || recent[0].content != "second") {
+    if (recent.size() != 1 || recent[0].content != "second" || recent[0].metadata["content"] != "second") {
         std::cerr << "recent event query failed\n";
         return false;
     }
