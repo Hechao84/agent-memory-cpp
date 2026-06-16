@@ -14,6 +14,7 @@ Core Runtime 是项目的运行时编排层，负责把事件、上下文、载�
 - `src/core/runtime_paths.*`：运行时数据路径解析。
 - `src/core/context_builder.*`：上下文构建。
 - `src/core/payload_service.*`：载荷卸载与读取。
+- `src/core/payload_query.*`：payload 引用查询过滤。
 
 ## 对外接口
 
@@ -90,11 +91,15 @@ Store 是事件的单一事实来源，Runtime 不再维护事件内存快照。
 ## 并发设计
 
 - Runtime `mutex` 只允许短持有，用于读取 `RuntimeServices` 中的服务指针和内置模型状态。
-- 不在持有 Runtime `mutex` 时调用 Store、PayloadService、ContextBuilder 或 ConsolidationService 的耗时操作。
+- 不在持有 Runtime `mutex` 时调用 Store、PayloadService、ContextBuilder、ConsolidationService 或 ModelClient 的耗时操作。
 - 长期记忆沉淀通过 `consolidationMutex` 串行执行，避免同一运行时内 cursor 竞争。
-- Store 自身也有独立锁保护 SQLite 连接。
+- Store 使用独立 `std::recursive_mutex` 保护 SQLite 连接。
+- PayloadService 使用独立 `std::recursive_mutex` 保护 payload 文件系统操作和 metadata 写入流程。
+- ContextBuilder 自身不维护共享可变状态，不加锁；并发安全依赖 Store/PayloadService。
+- HTTP/MCP 可并发调用 Runtime 公共方法；公共方法按上述锁策略设计为可并发入口，其中同一 Runtime 的 `Consolidate` 会串行执行。
+- 自定义 `ModelClient*` 或注入的 `JsonPostTransport` 如果被多个线程共享，宿主实现需要自行保证线程安全。
 - Consolidation 事务内写入通过 `MemoryStoreTransaction` 执行，避免事务回调再次调用会加锁的 Store 公共写方法。
-- 锁顺序约定：短暂获取 Runtime `mutex` 读取服务指针；释放后再进入 `consolidationMutex` 或 Store/Payload/Context 操作。
+- 锁顺序约定：短暂获取 Runtime `mutex` 读取服务指针；释放后再进入 `consolidationMutex` 或 Store/Payload/Context/Model 操作。
 
 ## 配置
 
@@ -105,7 +110,7 @@ Store 是事件的单一事实来源，Runtime 不再维护事件内存快照。
 | `dataPath` | 空 | 数据目录；服务端会解析成可写绝对路径 |
 | `tokenBudget` | `4096` | 默认上下文 token 预算 |
 | `offloadThresholdChars` | `8000` | payload 卸载字符阈值 |
-| `enablePayloadOffload` | `false` | 是否启用 payload 文件卸载 |
+| `enablePayloadOffload` | `true` | 是否启用 payload 文件卸载；仅内容长度大于等于阈值时生效 |
 | `model.enabled` | `false` | 是否启用 SDK/runtime 内置模型 |
 | `model.formatType` | `openai` | 内置模型协议，`openai` 或 `anthropic` |
 | `model.baseUrl` | 空 | 模型服务地址 |

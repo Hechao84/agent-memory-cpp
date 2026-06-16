@@ -68,12 +68,13 @@ Serialization 模块负责 C++ 领域对象与 JSON 的互相转换，为 RESTfu
 - `MemoryEvent`
 - `MemoryPayloadWriteRequest`
 - `MemoryPayloadWriteResult`
+- `MemoryPayloadReadResult`（SDK 结果类型；HTTP/MCP 读取响应当前编码为 `{uri, content}` data 对象）
 - `MemoryConsolidationRequest`
 - `MemoryConsolidationResult`
 - `MemorySearchRequest`
 - `MemorySearchResult` 数组
 
-当前 `MemoryEvent` JSON 包含 `metadata`，Store 会持久化该字段；`MemoryPayloadRef` JSON 包含 `agentId/sessionId`，用于 payload 上下文隔离。
+当前 `MemoryEvent` JSON 包含 `metadata`，Store 会持久化该字段。C++ `MemoryEvent` 还包含 `storeCursor`，由 Store 读取事件时填充，主要用于 consolidation cursor 跟踪；外部调用方通常不需要设置。`MemoryPayloadRef` JSON 包含 `agentId/sessionId`，用于 payload 上下文隔离。
 
 ## 诊断设计
 

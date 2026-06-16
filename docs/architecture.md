@@ -57,7 +57,8 @@ agent-memory-cpp 是一个独立的 C++17 Agent 记忆运行时，目标是为 A
 - SDK：`include/agent_memory/*.h` 中的公共类型和 `MemoryRuntime` / `BuiltinMemoryRuntime`。
 - REST：`src/transport/http/memory_http_server.cpp` 注册 `/v1/events`、`/v1/context`、`/v1/payloads`、`/v1/consolidate`、`/v1/search`、`/v1/stats`、`/health`。
 - MCP：`src/transport/mcp/memory_mcp_protocol.cpp` 支持 `initialize`、`tools/list`、`tools/call`，并映射到记忆工具。
-- CLI Server：`src/server/server_main.cpp` 负责读取配置、创建运行时、启动 HTTP/MCP 服务。
+- CLI Server：`src/server/server_main.cpp` 负责读取配置、创建运行时、启动 HTTP/MCP 服务；`src/server/server_cli.*` 负责命令行参数解析。
+- Payload query：`src/core/payload_query.*` 负责 context 构建时的 payload 引用过滤。
 
 ### 2. 运行时编排层
 
@@ -266,9 +267,14 @@ MemoryHttpServer / MemoryMcpProtocol
 
 ## 运行时与并发模型
 
-- `BuiltinMemoryRuntime` 使用互斥锁保护服务指针和少量运行时状态；事件和 payload 引用以 Store 为单一事实来源。
+- `BuiltinMemoryRuntime` 使用短持有 `mutex` 保护服务指针和少量运行时状态；耗时操作在释放该锁后执行。
 - `Consolidate` 使用独立的 `consolidationMutex` 串行化同一运行时内的长期记忆沉淀，避免游标并发写入冲突。
-- `MemorySqliteStore` 使用递归互斥锁保护 SQLite 连接访问。
+- 锁顺序约定：如果一次调用涉及多个锁，先短暂读取 Runtime 服务指针并释放 Runtime `mutex`，再进入 `consolidationMutex`、Store、PayloadService、ContextBuilder 或模型调用；不要在持有 Runtime `mutex` 时执行下层耗时操作。
+- `MemorySqliteStore` 使用 `std::recursive_mutex` 保护 SQLite 连接访问。
+- `PayloadService` 使用 `std::recursive_mutex` 保护 payload 目录、文件写入/读取和 metadata 写入流程。
+- `ContextBuilder` 自身不加锁，依赖 Store/PayloadService 的同步保证；它不维护可变共享状态。
+- HTTP/MCP handler 可能被 cpp-httplib 并发调用，线程安全边界由注入的 `MemoryRuntime` 负责。
+- 内置 OpenAI/Anthropic `ModelClient` 每次请求创建独立 curl easy handle；注入的自定义 `ModelClient` 或 `JsonPostTransport` 如共享外部状态，需要实现方自行保证线程安全。
 - `memory-server` 可通过 `server.http.threadCount` 配置 cpp-httplib 线程池。
 
 ## 存储布局

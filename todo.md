@@ -8,15 +8,14 @@ This is the single source of truth for project TODOs. Do not maintain module-loc
 - Server integration uses `memory-server`, which exposes HTTP and MCP endpoints backed by `BuiltinMemoryRuntime`.
 - Remote-client runtime support is intentionally not part of this project.
 
-## P1: Remove nlohmann/json dependency from public `config.h`
+## P2: Re-evaluate public SDK nlohmann/json dependency
 
-- Split `MemoryModelConfig` out of `include/agent_memory/config.h` into a separate `include/agent_memory/model_config.h`.
-- `config.h` should no longer `#include <nlohmann/json.hpp>`.
-- Only users who need model configuration will include `model_config.h` and accept the nlohmann dependency.
-- Update all internal and test code that currently includes `config.h` for `MemoryModelConfig` to include `model_config.h` instead.
-- Update CMake install rules to add `model_config.h` to the public header list.
-- This is a lightweight change (~3-4 files) that eliminates a heavy dependency from the most commonly included SDK header, without changing any field types or API semantics.
-- **Origin**: Review round 1, item 4d. See `docs/review/round1/review_reply.md`.
+- `include/agent_memory/config.h` currently includes `<nlohmann/json.hpp>` because `MemoryModelConfig::extraParams` uses `nlohmann::json` and `MemoryConfig` owns `MemoryModelConfig model` by value.
+- Do not treat "split `MemoryModelConfig` into `model_config.h`" as a sufficient fix: `config.h` would still need the complete `MemoryModelConfig` definition for the value member, so the nlohmann dependency would still propagate.
+- Real fixes require a public API decision, such as changing `extraParams` to a JSON string / string map / SDK-owned lightweight value type, or changing `MemoryConfig::model` to a pimpl/optional-owned type that can be forward declared.
+- Current decision: keep the API unchanged for now. This is an API cleanup / compile-time dependency issue, not a runtime correctness, security, or data-loss issue.
+- **Trigger condition**: revisit during an SDK v2.0 breaking refactor, or if SDK users report nlohmann availability / compile-time cost problems.
+- **Origin**: Review round 1 item 4d; revised by review round 2 item #5. See `docs/review/round2/review_reply.md` and `docs/review/round2/review_reply_confirm.md`.
 
 ## P1: Deferred consolidation follow-ups
 

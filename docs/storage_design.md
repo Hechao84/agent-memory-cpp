@@ -125,3 +125,18 @@ ConsolidationService
 ## 数据文件布局
 
 SQLite 数据库位于运行时数据目录下，payload 原文不直接存入数据库，而是由 PayloadService 写入 `memory_runtime/payloads`，数据库只保存引用。
+
+```text
+<dataPath>/
+  memory_runtime/
+    memory.db
+    payloads/
+      <session>_<toolCall>_<random>.txt
+```
+
+## 安全与备份
+
+- 当前实现依赖运行目录和进程 umask 决定 SQLite 数据库、payload 文件和配置文件权限；尚未显式设置 0600 文件权限。生产部署建议将 `dataPath` 放在仅服务进程用户可读写的目录下。
+- payload 文件和 SQLite 数据库共同构成一致备份单元。备份/恢复时应同时处理 `memory.db` 和 `payloads/` 目录，避免数据库引用缺失的 payload 文件。
+- metadata 保存失败时，PayloadService 会删除已经写入的 payload 文件；进程崩溃遗留的 `.txt.tmp.` 临时文件不会被数据库引用，会在后续 payload 写入时按 TTL 清理。
+- 当前没有内置在线备份、加密存储或文件权限修复机制；这些能力应作为部署/运维增强单独设计。

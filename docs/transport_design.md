@@ -59,7 +59,7 @@ Transport 模块把网络协议请求转换为统一的 `MemoryRuntime` 抽象�
 
 传输层错误可能返回简化错误，例如未授权或 JSON 解析错误。
 
-### 认证
+### 认证与部署安全
 
 如果 `server.auth.apiToken` 非空，则除 `/health` 外所有请求必须携带：
 
@@ -67,7 +67,9 @@ Transport 模块把网络协议请求转换为统一的 `MemoryRuntime` 抽象�
 Authorization: Bearer <token>
 ```
 
-认证比较使用常量时间字符串比较。
+认证比较使用常量时间字符串比较。`apiToken` 来自 server 配置文件；当前不提供密钥加密或环境变量展开机制，生产部署应限制配置文件权限，避免把 token/API key 提交到版本库。
+
+当前内置 HTTP server 不直接提供 TLS/HTTPS、CORS 或 rate limiting。生产环境如果需要跨主机访问，建议放在反向代理后，由代理层提供 TLS、限流、CORS 和访问控制。`memory-server` 监听非 loopback host 时会打印警告，提醒调用方确认网络暴露面。
 
 ### 请求大小限制
 
@@ -135,7 +137,7 @@ CLI 参数：
 
 主要配置分组：
 
-- `memory`：dataPath、payload offload、token budget。
+- `memory`：dataPath、payload offload、token budget。Server 模式 `memory.enablePayloadOffload` 默认 true，与 SDK `MemoryConfig.enablePayloadOffload` 默认值一致；只有内容长度大于等于阈值时才 offload。
 - `model`：是否启用外部模型、模型协议和参数。
 - `server.http`：host、port、超时、线程数、请求体限制。
 - `server.mcp`：mode、path、消息大小限制。

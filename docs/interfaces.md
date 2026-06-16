@@ -11,7 +11,7 @@ SDK 初始化参数。
 | `dataPath` | string | 否 | 空 | 数据目录。Server 模式来自 `memory.dataPath` |
 | `tokenBudget` | integer | 否 | `4096` | 默认上下文 token 预算 |
 | `offloadThresholdChars` | integer | 否 | `8000` | payload 卸载字符阈值 |
-| `enablePayloadOffload` | boolean | 否 | `false` | 是否启用 payload 文件卸载 |
+| `enablePayloadOffload` | boolean | 否 | `true` | 是否启用 payload 文件卸载；开启后仅当内容长度大于等于 `offloadThresholdChars` 时才写入 payload 文件 |
 | `model` | object | 否 | disabled | SDK 内置模型配置；字段见下方内置模型配置，`enabled=false` 表示不启用 |
 
 ### MemoryEvent
@@ -28,6 +28,7 @@ SDK 初始化参数。
 | `toolCallId` | string | 否 | 空 | 工具调用 ID |
 | `toolName` | string | 否 | 空 | 工具名称 |
 | `payloadRef` | string | 否 | 空 | payload URI 引用 |
+| `storeCursor` | string | 否 | 空 | Store 写入后生成的内部游标，用于 consolidation cursor 跟踪；调用方通常不需要设置 |
 | `metadata` | object | 否 | `{}` | 扩展元数据，会随事件持久化 |
 | `timestamp` | string | 否 | 空 | 时间戳；为空时由存储层写入时间 |
 
@@ -101,6 +102,16 @@ SDK 初始化参数。
 | `payload` | object | payload 引用 |
 | `error` | object | 错误对象 |
 
+### MemoryPayloadReadResult
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `succeeded` | boolean | 是否成功读取 |
+| `content` | string | payload 原文；仅成功时有值 |
+| `error` | object | 错误对象 |
+
+HTTP/MCP 读取 payload 时当前响应 data 为 `{ "uri": "...", "content": "..." }`，SDK 返回 `MemoryPayloadReadResult`。
+
 ### MemoryPayloadRef
 
 | 字段 | 类型 | 说明 |
@@ -116,6 +127,8 @@ SDK 初始化参数。
 | `createdAt` | string | 创建时间 |
 
 ### MemoryConsolidationRequest
+
+`forceReprocess=true` 会忽略保存的 cursor 从头重跑当前 agent/session 范围内事件；`maxEvents<=0` 表示不裁剪批次，处理加载到的全部事件。
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -180,6 +193,41 @@ SDK 初始化参数。
 | `message` | string | 错误说明 |
 | `details` | string | 详细信息 |
 | `retryable` | boolean | 是否建议重试 |
+
+`MemoryError::operator bool()` 在存在错误码时返回 `true`；这与 Result 类型的 `operator bool()`（成功时为 `true`）语义相反。
+
+### MemoryModelStatus
+
+`BuiltinMemoryRuntime::GetModelStatus()` 返回 runtime 内置模型状态；不描述单次 `Consolidate(request, model)` 传入的宿主模型。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `configured` | boolean | 是否配置了内置模型 |
+| `available` | boolean | 内置模型是否可用 |
+| `formatType` | string | 模型协议，如 `openai` 或 `anthropic` |
+| `modelName` | string | 模型名称 |
+| `error` | string | 加载或校验失败原因 |
+
+### 错误码目录
+
+| 错误码 | 典型来源 | 含义 |
+| --- | --- | --- |
+| `store_unavailable` | Runtime / Store | SQLite Store 未初始化或不可用 |
+| `sqlite_error` | Store | SQLite prepare/step/exec/commit 等操作失败 |
+| `transaction_failed` | Store | 事务回调返回失败但未提供具体错误 |
+| `event_persist_failed` | Runtime | 事件持久化失败 |
+| `cursor_load_failed` | Runtime consolidation | 读取 consolidation cursor 失败 |
+| `events_load_failed` | Runtime consolidation | 读取待处理事件失败 |
+| `cursor_save_failed` | Runtime consolidation | 保存 consolidation cursor 失败 |
+| `consolidation_failed` | Consolidation | 长期记忆写入失败 |
+| `payload_write_failed` | PayloadService | payload 文件或 metadata 写入失败 |
+| `payload_read_failed` | PayloadService | payload URI 不支持、越界、文件缺失或不可读 |
+| `context_build_failed` | Runtime | ContextBuilder 不可用 |
+| `search_unavailable` | Runtime | Search Store 不可用 |
+| `stats_unavailable` | Runtime | Stats Store 不可用 |
+| `invalid_config` | Model | 模型配置无效 |
+| `http_error` | Model | 上游模型 HTTP 请求失败 |
+| `parse_error` | Model | 上游模型响应无法解析为有效记忆更新 |
 
 ## SDK 集成
 
@@ -852,7 +900,7 @@ POST /mcp
 | 路径 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `memory.dataPath` | string | `./data` | 数据目录 |
-| `memory.enablePayloadOffload` | boolean | `true` | 是否启用 payload 卸载 |
+| `memory.enablePayloadOffload` | boolean | `true` | 是否启用 payload 卸载；与 SDK 默认一致，超过阈值才 offload |
 | `memory.offloadThreshold` | integer | `8000` | 卸载阈值 |
 | `memory.tokenBudget` | integer | `4096` | 默认上下文预算 |
 | `model.enabled` | boolean | `false` | 是否启用模型 |

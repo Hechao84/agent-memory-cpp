@@ -36,12 +36,13 @@ public:
 
 ## 配置结构
 
-SDK 使用 `MemoryConfig.model` 配置内置模型；Server 模式的顶层 `model` 配置会在启动时映射到同一结构：
+SDK 使用 `MemoryConfig.model` 配置内置模型；Server 模式的顶层 `model` 配置会在启动时映射到同一结构。`model.strict` 是 ServerOptions 行为控制项，不属于 `MemoryModelConfig`：strict=true 时模型配置失败会导致 server 启动失败，strict=false 时 server 可继续以规则抽取回退运行。
+
+`MemoryModelConfig` 字段：
 
 | 字段 | 说明 |
 | --- | --- |
 | `enabled` | 是否启用模型 |
-| `strict` | 模型配置失败时是否直接启动失败 |
 | `formatType` | `openai` 或 `anthropic` |
 | `baseUrl` | 模型服务地址 |
 | `apiKey` | API Key |
@@ -53,6 +54,24 @@ SDK 使用 `MemoryConfig.model` 配置内置模型；Server 模式的顶层 `mod
 | `extraParams` | 额外请求体参数 |
 | `organization` | OpenAI organization header |
 | `anthropicVersion` / `anthropic-version` | Anthropic version header |
+
+Server JSON 配置到 SDK 配置的映射关系：
+
+| Server 字段 | SDK 字段 |
+| --- | --- |
+| `model.enabled` | `MemoryModelConfig.enabled` |
+| `model.formatType` | `MemoryModelConfig.formatType` |
+| `model.baseUrl` | `MemoryModelConfig.baseUrl` |
+| `model.apiKey` | `MemoryModelConfig.apiKey` |
+| `model.modelName` | `MemoryModelConfig.modelName` |
+| `model.timeoutSeconds` | `MemoryModelConfig.timeoutSeconds` |
+| `model.temperature` | `MemoryModelConfig.temperature` |
+| `model.maxTokens` / `model.max_tokens` | `MemoryModelConfig.maxTokens` |
+| `model.headers` | `MemoryModelConfig.headers` |
+| `model.extraParams` | `MemoryModelConfig.extraParams` |
+| `model.organization` | `MemoryModelConfig.organization` |
+| `model.anthropicVersion` / `model.anthropic-version` | `MemoryModelConfig.anthropicVersion` |
+| `model.strict` | `ServerOptions.strictModelConfig`，不进入 `MemoryModelConfig` |
 
 ## OpenAI-compatible 适配
 
@@ -106,11 +125,15 @@ SDK 使用 `MemoryConfig.model` 配置内置模型；Server 模式的顶层 `mod
 - 遍历 `content` 数组。
 - 拼接 `type=text` 块中的 `text` 字段。
 
+## LLM prompt
+
+Consolidation 使用的内置 LLM prompt 当前硬编码在 `LlmLongTermMemoryProcessor::BuildPrompt` 中，包含输出 JSON schema、实体/关系字段和事件列表。当前阶段不从配置或文件加载 prompt：先保持 prompt/schema 在代码内稳定和可测试。待内置 prompt 稳定且出现明确多业务定制需求后，再设计从文件读取或配置指定的模板机制。
+
 ## HTTP 调用层
 
 `ModelHttpClient` 是模型 provider 的实例级 HTTP 调用封装。每个 `OpenAiModelClient` / `AnthropicModelClient` 持有自己的 `ModelHttpClient`，默认 transport 使用 libcurl 发送 JSON POST。
 
-测试或内部工厂可以为单个模型实例注入自定义 `JsonPostTransport`，不会影响同进程中的其他模型实例或 runtime。transport 闭包如果共享外部状态，需要由注入方自行保证线程安全。
+测试或内部工厂可以为单个模型实例注入自定义 `JsonPostTransport`，不会影响同进程中的其他模型实例或 runtime。默认 transport 每次请求创建独立 curl easy handle；transport 闭包如果共享外部状态，需要由注入方自行保证线程安全。
 
 ## 加载逻辑
 
@@ -127,6 +150,12 @@ SDK 使用 `MemoryConfig.model` 配置内置模型；Server 模式的顶层 `mod
 - `maxTokens` 非负。
 - `temperature` 在 0 到 2 之间。
 - `headers`、`extraParams` 必须为 object。
+
+## 安全注意事项
+
+- `apiKey`、`headers` 和 provider-specific token 当前来自 SDK/Server 配置，库本身不加密保存，也不做环境变量展开。
+- 不要把包含真实 API key 的 JSON 配置提交到版本库；生产部署应限制配置文件权限，并优先由部署系统注入密钥。
+- `providerError` 可能包含上游模型返回的原始错误内容；对外暴露前应结合 `debugErrors` 和日志策略评估是否包含敏感信息。
 
 ## 与其他模块关系
 

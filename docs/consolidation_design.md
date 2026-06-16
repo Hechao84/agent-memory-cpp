@@ -42,7 +42,7 @@ virtual LongTermMemoryUpdate Process(const LongTermMemoryBatch& batch) = 0;
 当前实现：
 
 - `RuleBasedLongTermMemoryProcessor`：规则抽取。
-- `LlmLongTermMemoryProcessor`：通过 `ModelClient` 调用外部模型抽取。
+- `LlmLongTermMemoryProcessor`：通过 `ModelClient` 调用外部模型抽取；当前由 `ConsolidationService` 在每次调用时临时创建，不作为长期持有的服务对象。
 
 ## 处理流程
 
@@ -70,7 +70,7 @@ BuiltinMemoryRuntime::Consolidate
 - `sessionSummary`
 - `sessionSourceRefs`
 
-`maxEvents` 控制单次最大处理事件数；`forceReprocess` 由运行时决定是否忽略历史 cursor。
+`maxEvents` 控制单次最大处理事件数；`forceReprocess` 由运行时决定是否忽略历史 cursor。`forceReprocess=false` 时从 Store 保存的 cursor 之后继续处理；`forceReprocess=true` 时从头重跑当前 agent/session 范围内的事件。`maxEvents<=0` 表示不裁剪批次，当前实现会处理加载到的全部事件。
 
 ## LLM 与规则回退
 
@@ -101,8 +101,10 @@ BuiltinMemoryRuntime::Consolidate
 
 ## 错误处理
 
-- 无事件可处理时返回默认 result，`succeeded=false` 且无错误。
-- 写入失败返回 `consolidation_failed`。
+- 无事件可处理时返回 `succeeded=true`、`processedEvents=0`、空 `error` 和空 `nextCursor`，表示任务成功完成但没有新工作。
+- 写入失败返回 `consolidation_failed`，并尽量传播 Store 层的错误详情。
+- 读取 cursor 失败由 Runtime 返回 `cursor_load_failed`。
+- 读取事件失败由 Runtime 返回 `events_load_failed`。
 - 保存 cursor 失败由 Runtime 返回 `cursor_save_failed`。
 
 ## 与其他模块关系

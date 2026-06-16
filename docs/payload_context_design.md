@@ -22,7 +22,8 @@ WritePayload(request)
   -> content 为空：返回原 content
   -> content 长度小于 offloadThresholdChars：返回原 content
   -> 生成随机唯一 payload ref
-  -> 创建 payload 文件
+  -> 写入临时文件 .tmp.<random>
+  -> rename 到最终 payload 文件
   -> 生成 file:// URI
   -> 保存 MemoryPayloadRef
   -> 返回 replacementContent
@@ -34,6 +35,10 @@ WritePayload(request)
 [memory-ref: file://...]
 Tool result offloaded from <toolName>, original chars: <n>.
 ```
+
+Payload 文件使用 temp-file-then-rename 写入：先写同目录临时文件，写入成功后通过 `rename` 切换到最终路径；metadata 保存失败时会删除最终文件。每次写入会异步触发临时文件清理，清理 24 小时前遗留的 `.txt.tmp.` 文件。
+
+SDK 与 Server 的默认 offload 策略一致：`MemoryConfig::enablePayloadOffload` 与 Server `memory.enablePayloadOffload` 默认均为 `true`。该开关只表示允许 offload，实际只有当 `content.size() >= offloadThresholdChars` 时才写入 payload 文件；低于阈值的内容仍直接返回原文。
 
 ### URI 与路径安全
 
