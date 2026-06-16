@@ -653,7 +653,7 @@ MemoryOperationResult MemorySqliteStore::RunInTransaction(const std::function<Me
         return MemorySuccess();
     }
     ExecuteUnlocked("ROLLBACK;");
-    return result.error ? result : MemoryFailure("transaction_failed", "transaction work failed");
+    return result.error.HasError() ? result : MemoryFailure("transaction_failed", "transaction work failed");
 }
 
 MemoryOperationResult MemorySqliteStore::MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy)

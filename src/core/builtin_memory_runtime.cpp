@@ -81,8 +81,8 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
         auto cursorResult = store->LoadConsolidationCursor(request.agentId, request.sessionId);
         if (!cursorResult) {
             MemoryConsolidationResult result;
-            result.error = cursorResult.error ? cursorResult.error
-                                              : MemoryError{"cursor_load_failed", "failed to load consolidation cursor", "", false};
+            result.error = cursorResult.error.HasError() ? cursorResult.error
+                                                          : MemoryError{"cursor_load_failed", "failed to load consolidation cursor", "", false};
             return result;
         }
         startCursor = cursorResult.cursor;
@@ -90,8 +90,8 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
     auto eventsResult = store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor);
     if (!eventsResult) {
         MemoryConsolidationResult result;
-        result.error = eventsResult.error ? eventsResult.error
-                                          : MemoryError{"events_load_failed", "failed to load events for consolidation", "", false};
+        result.error = eventsResult.error.HasError() ? eventsResult.error
+                                                     : MemoryError{"events_load_failed", "failed to load events for consolidation", "", false};
         return result;
     }
     MemoryConsolidationResult result = consolidationService->Consolidate(request, eventsResult.events, model);
@@ -99,8 +99,8 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
         auto cursorResult = store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor);
         if (!cursorResult) {
             result.succeeded = false;
-            result.error = cursorResult.error ? cursorResult.error
-                                              : MemoryError{"cursor_save_failed", "failed to persist consolidation cursor", "", false};
+            result.error = cursorResult.error.HasError() ? cursorResult.error
+                                                          : MemoryError{"cursor_save_failed", "failed to persist consolidation cursor", "", false};
         }
     }
     return result;
@@ -122,7 +122,7 @@ MemoryOperationResult BuiltinMemoryRuntime::AppendEvent(const MemoryEvent& event
     }
     auto result = store->SaveEvent(event);
     if (!result) {
-        return result.error ? result : MemoryFailure("event_persist_failed", "failed to persist memory event");
+        return result.error.HasError() ? result : MemoryFailure("event_persist_failed", "failed to persist memory event");
     }
     return MemorySuccess();
 }

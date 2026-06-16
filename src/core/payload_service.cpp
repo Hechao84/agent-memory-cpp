@@ -89,8 +89,8 @@ MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRe
             fs::remove(payloadPath, removeError);
             result.succeeded = false;
             result.offloaded = false;
-            result.error = saveResult.error ? saveResult.error
-                                            : MemoryError{"payload_write_failed", "failed to persist payload metadata", "", false};
+            result.error = saveResult.error.HasError() ? saveResult.error
+                                                       : MemoryError{"payload_write_failed", "failed to persist payload metadata", "", false};
             result.replacementContent = request.content;
         }
     }

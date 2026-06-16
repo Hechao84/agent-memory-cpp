@@ -70,8 +70,8 @@ MemoryConsolidationResult ConsolidationService::Consolidate(const MemoryConsolid
         result.savedRelations = updateWrite.savedRelations;
     }
     if (!operation) {
-        result.error = operation.error ? operation.error
-                                       : MemoryError{"consolidation_failed", "failed to persist consolidation update", "", false};
+        result.error = operation.error.HasError() ? operation.error
+                                                  : MemoryError{"consolidation_failed", "failed to persist consolidation update", "", false};
     }
     return result;
 }

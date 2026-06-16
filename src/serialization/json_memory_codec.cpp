@@ -282,7 +282,7 @@ JsonDecodeDiagnostics JsonDecodeDiagnosticsFor(const nlohmann::json& j, const st
 
 nlohmann::json ErrorToJson(const MemoryError& error)
 {
-    if (!error) {
+    if (error.Empty()) {
         return nlohmann::json::object();
     }
     return {{"code", error.code}, {"message", error.message}, {"details", error.details}, {"retryable", error.retryable}};

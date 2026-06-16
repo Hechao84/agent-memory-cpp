@@ -194,7 +194,7 @@ HTTP/MCP 读取 payload 时当前响应 data 为 `{ "uri": "...", "content": "..
 | `details` | string | 详细信息 |
 | `retryable` | boolean | 是否建议重试 |
 
-`MemoryError::operator bool()` 在存在错误码时返回 `true`；这与 Result 类型的 `operator bool()`（成功时为 `true`）语义相反。
+`MemoryError` 不提供 `operator bool()`，避免和 Result 类型的成功语义混淆。请使用 `error.HasError()` 判断是否存在错误，或使用 `error.Empty()` 判断是否无错误。
 
 ### MemoryModelStatus
 

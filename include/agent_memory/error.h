@@ -19,8 +19,11 @@ struct AGENT_MEMORY_API MemoryError
     /** Whether retrying the same operation may succeed. */
     bool retryable{false};
 
-    /** Returns true when an error is present. This is inverted from result-type operator bool semantics. */
-    explicit operator bool() const { return !code.empty(); }
+    /** Returns true when an error is present. */
+    bool HasError() const { return !code.empty(); }
+
+    /** Returns true when no error is present. */
+    bool Empty() const { return code.empty(); }
 };
 
 /** Generic success/error result for operations without a data payload. */

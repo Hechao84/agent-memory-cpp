@@ -548,7 +548,7 @@ int main()
             request.agentId = "agent-concurrent";
             request.sessionId = "session-0";
             auto result = concurrentRuntime.Consolidate(request);
-            if (result.error) {
+            if (result.error.HasError()) {
                 ok = false;
             }
         }
