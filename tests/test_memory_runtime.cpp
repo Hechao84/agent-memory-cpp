@@ -10,7 +10,12 @@
 #include <vector>
 
 #include "agent_memory/builtin_memory_runtime.h"
+#include "file_util.h"
+#include "path_util.h"
+#include "payload_query.h"
 #include "payload_service.h"
+#include "runtime_paths.h"
+#include "runtime_store_initializer.h"
 #include "store.h"
 
 namespace fs = std::filesystem;
@@ -45,10 +50,81 @@ private:
     std::string response_;
 };
 
+bool TestUtilityModules()
+{
+    fs::path root = fs::temp_directory_path() / "agent_memory_cpp_utility_test";
+    fs::remove_all(root);
+    fs::create_directories(root / "payloads" / "nested");
+    std::ofstream(root / "sample.txt") << "hello";
+
+    if (LoadTextFile((root / "sample.txt").string()).value_or("") != "hello") {
+        std::cerr << "LoadTextFile should read text files\n";
+        return false;
+    }
+    if (LoadTextFile((root / "missing.txt").string()).has_value()) {
+        std::cerr << "LoadTextFile should return nullopt for missing files\n";
+        return false;
+    }
+    if (CanonicalPath((root / "." / "payloads").string()).empty()) {
+        std::cerr << "CanonicalPath should resolve existing paths\n";
+        return false;
+    }
+    if (!IsPathInsideDirectory((root / "payloads" / "nested").string(), (root / "payloads").string()) ||
+        IsPathInsideDirectory((root / "payloads").string(), (root / "payloads").string()) ||
+        IsPathInsideDirectory((root / "sample.txt").string(), (root / "payloads").string()) ||
+        IsPathInsideDirectory((root / "payloads" / ".." / "sample.txt").string(), (root / "payloads").string())) {
+        std::cerr << "IsPathInsideDirectory should reject equality and traversal\n";
+        return false;
+    }
+
+    MemoryPayloadRef payload;
+    payload.uri = "file://payloads/tool.txt";
+    payload.toolName = "SearchTool";
+    payload.summary = "Large JSON Result";
+    payload.contentType = "application/json";
+    if (!MatchesPayloadQuery(payload, ParsePayloadQuery("searchtool json")) ||
+        !MatchesPayloadQuery(payload, ParsePayloadQuery("LARGE result")) ||
+        MatchesPayloadQuery(payload, ParsePayloadQuery("missing"))) {
+        std::cerr << "payload query matching failed\n";
+        return false;
+    }
+
+    MemoryConfig defaultConfig;
+    if (ResolveRuntimeDataPath(defaultConfig) != "./data") {
+        std::cerr << "default runtime data path failed\n";
+        return false;
+    }
+    MemoryConfig configured;
+    configured.dataPath = root.string();
+    if (RuntimeDatabasePath(configured) != root / "memory_runtime" / "memory.db") {
+        std::cerr << "runtime database path failed\n";
+        return false;
+    }
+    auto store = CreateRuntimeStore(configured);
+    if (!store || !fs::exists(root / "memory_runtime" / "memory.db")) {
+        std::cerr << "runtime store initializer should create database\n";
+        return false;
+    }
+    MemoryConfig badConfig;
+    badConfig.dataPath = (root / "sample.txt").string();
+    auto badStore = CreateRuntimeStore(badConfig);
+    if (badStore || badStore.error.find("failed") == std::string::npos) {
+        std::cerr << "runtime store initializer should fail for file data path\n";
+        return false;
+    }
+
+    fs::remove_all(root);
+    return true;
+}
+
 } // namespace
 
 int main()
 {
+    if (!TestUtilityModules()) {
+        return 1;
+    }
+
     fs::path dataPath = fs::temp_directory_path() / "agent_memory_cpp_test";
     fs::remove_all(dataPath);
 
@@ -193,6 +269,11 @@ int main()
         std::cerr << "payload path traversal should be rejected\n";
         return 1;
     }
+    auto missingPayloadRead = runtime.ReadPayload("file://" + (dataPath / "memory_runtime" / "payloads" / "missing.txt").string());
+    if (missingPayloadRead || missingPayloadRead.error.code != "payload_read_failed") {
+        std::cerr << "missing payload file should fail with structured error\n";
+        return 1;
+    }
 
     MemoryConsolidationRequest consolidateRequest;
     consolidateRequest.agentId = "agent-1";
@@ -209,6 +290,13 @@ int main()
     searchRequest.limit = 5;
     if (runtime.SearchMemory(searchRequest).results.empty()) {
         std::cerr << "SQLite memory search failed\n";
+        return 1;
+    }
+    auto emptySearchRequest = searchRequest;
+    emptySearchRequest.query.clear();
+    auto emptySearch = runtime.SearchMemory(emptySearchRequest);
+    if (!emptySearch || !emptySearch.results.empty()) {
+        std::cerr << "empty search query should succeed with no results\n";
         return 1;
     }
 
