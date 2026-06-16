@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <mutex>
 #include <string>
 
@@ -22,6 +23,8 @@ public:
 private:
     std::string BuildPayloadRef(const MemoryPayloadWriteRequest& request) const;
     std::string BuildPayloadSummary(const MemoryPayloadWriteRequest& request) const;
+    bool WritePayloadFileAtomically(const std::filesystem::path& payloadPath, const std::string& content, MemoryPayloadWriteResult& result) const;
+    void ScheduleTempFileCleanup() const;
     std::string PayloadDirectory() const;
     void SetLastError(const std::string& error) const;
     void ClearLastError() const;

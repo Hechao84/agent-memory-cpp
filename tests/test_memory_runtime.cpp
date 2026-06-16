@@ -1,5 +1,7 @@
 #include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -8,12 +10,21 @@
 #include <vector>
 
 #include "agent_memory/builtin_memory_runtime.h"
+#include "payload_service.h"
+#include "store.h"
 
 namespace fs = std::filesystem;
 
 using namespace agent_memory;
 
 namespace {
+
+class FailingPayloadStore : public MemoryPayloadStore
+{
+public:
+    bool SavePayload(const MemoryPayloadRef&) override { return false; }
+    std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string&, const std::string&, int) const override { return {}; }
+};
 
 class StaticModelClient : public ModelClient
 {
@@ -123,6 +134,50 @@ int main()
         std::cerr << "duplicate payload refs should not collide\n";
         return 1;
     }
+    fs::path payloadDirectory = dataPath / "memory_runtime" / "payloads";
+    for (const auto& entry : fs::directory_iterator(payloadDirectory)) {
+        if (entry.path().filename().string().find(".txt.tmp.") != std::string::npos) {
+            std::cerr << "payload temp file should not remain after successful write\n";
+            return 1;
+        }
+    }
+    auto oldTemp = payloadDirectory / "stale.txt.tmp.test";
+    {
+        std::ofstream staleFile(oldTemp);
+        staleFile << "stale";
+    }
+    fs::last_write_time(oldTemp, fs::file_time_type::clock::now() - std::chrono::hours(25));
+    auto cleanupTrigger = runtime.WritePayload(payloadRequest);
+    if (!cleanupTrigger.offloaded) {
+        std::cerr << "payload cleanup trigger write failed\n";
+        return 1;
+    }
+    for (int i = 0; i < 50 && fs::exists(oldTemp); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    if (fs::exists(oldTemp)) {
+        std::cerr << "stale payload temp file should be cleaned asynchronously\n";
+        return 1;
+    }
+    auto failDataPath = fs::temp_directory_path() / "agent_memory_cpp_payload_fail_test";
+    fs::remove_all(failDataPath);
+    MemoryConfig failConfig;
+    failConfig.dataPath = failDataPath.string();
+    failConfig.enablePayloadOffload = true;
+    failConfig.offloadThresholdChars = 1;
+    FailingPayloadStore failingStore;
+    PayloadService failingPayloadService(failConfig, failConfig.dataPath, &failingStore);
+    auto failedPayload = failingPayloadService.WritePayload(payloadRequest);
+    if (failedPayload || failedPayload.error.code != "payload_write_failed") {
+        std::cerr << "payload metadata failure should fail write result\n";
+        return 1;
+    }
+    fs::path failedPayloadDirectory = failDataPath / "memory_runtime" / "payloads";
+    if (fs::exists(failedPayloadDirectory) && !fs::is_empty(failedPayloadDirectory)) {
+        std::cerr << "payload file should be removed after metadata failure\n";
+        return 1;
+    }
+    fs::remove_all(failDataPath);
     auto otherPayloadRequest = payloadRequest;
     otherPayloadRequest.agentId = "agent-2";
     otherPayloadRequest.sessionId = "session-2";
