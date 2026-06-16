@@ -3,6 +3,7 @@
 #include <fstream>
 #include <utility>
 
+#include "json_helpers.h"
 #include "model_config.h"
 #include "provider/anthropic/anthropic_model_client.h"
 #include "provider/openai/openai_model_client.h"
@@ -11,42 +12,6 @@
 namespace agent_memory {
 
 namespace {
-
-std::string LoadString(const nlohmann::json& j, const std::string& key, const std::string& defaultValue = "")
-{
-    if (!j.contains(key) || !j[key].is_string()) {
-        return defaultValue;
-    }
-    return j[key].get<std::string>();
-}
-
-int LoadInt(const nlohmann::json& j, const std::string& key, int defaultValue)
-{
-    if (!j.contains(key) || !j[key].is_number_integer()) {
-        return defaultValue;
-    }
-    return j[key].get<int>();
-}
-
-double LoadDouble(const nlohmann::json& j, const std::string& key, double defaultValue)
-{
-    if (!j.contains(key) || !j[key].is_number()) {
-        return defaultValue;
-    }
-    return j[key].get<double>();
-}
-
-void LoadHeaders(const nlohmann::json& j, std::unordered_map<std::string, std::string>& headers)
-{
-    if (!j.contains("headers") || !j["headers"].is_object()) {
-        return;
-    }
-    for (auto it = j["headers"].begin(); it != j["headers"].end(); ++it) {
-        if (it.value().is_string()) {
-            headers[it.key()] = it.value().get<std::string>();
-        }
-    }
-}
 
 OpenAiModelConfig LoadOpenAiConfig(const MemoryModelConfig& source)
 {
@@ -76,21 +41,6 @@ AnthropicModelConfig LoadAnthropicConfig(const MemoryModelConfig& source)
     config.extraParams = source.extraParams;
     config.anthropicVersion = source.anthropicVersion.empty() ? "2023-06-01" : source.anthropicVersion;
     return config;
-}
-
-bool HasInvalidString(const nlohmann::json& j, const std::string& key)
-{
-    return j.contains(key) && !j[key].is_string();
-}
-
-bool HasInvalidNumber(const nlohmann::json& j, const std::string& key)
-{
-    return j.contains(key) && !j[key].is_number();
-}
-
-bool HasInvalidInteger(const nlohmann::json& j, const std::string& key)
-{
-    return j.contains(key) && !j[key].is_number_integer();
 }
 
 ModelClientLoadResult ValidateCommon(const std::string& formatType, const ModelConfig& config)
@@ -142,10 +92,10 @@ MemoryModelConfigLoadResult ValidateJsonConfig(const nlohmann::json& j, const st
     if (HasInvalidNumber(j, "temperature")) {
         return {{}, formatType + " model config temperature must be a number"};
     }
-    if (j.contains("headers") && !j["headers"].is_object()) {
+    if (HasInvalidObject(j, "headers")) {
         return {{}, formatType + " model config headers must be an object"};
     }
-    if (j.contains("extraParams") && !j["extraParams"].is_object()) {
+    if (HasInvalidObject(j, "extraParams")) {
         return {{}, formatType + " model config extraParams must be an object"};
     }
     return {{}, ""};
@@ -159,7 +109,7 @@ MemoryModelConfigLoadResult LoadMemoryModelConfigFromJson(const nlohmann::json& 
         return {{}, "invalid model config JSON"};
     }
 
-    std::string formatType = LoadString(j, "formatType", "openai");
+    std::string formatType = JsonString(j, "formatType", "openai");
     auto jsonValidation = ValidateJsonConfig(j, formatType);
     if (!jsonValidation.error.empty()) {
         return jsonValidation;
@@ -168,18 +118,18 @@ MemoryModelConfigLoadResult LoadMemoryModelConfigFromJson(const nlohmann::json& 
     MemoryModelConfig config;
     config.enabled = true;
     config.formatType = formatType;
-    config.baseUrl = LoadString(j, "baseUrl");
-    config.apiKey = LoadString(j, "apiKey");
-    config.modelName = LoadString(j, "modelName");
-    config.organization = LoadString(j, "organization");
-    config.anthropicVersion = LoadString(j, "anthropicVersion", LoadString(j, "anthropic-version", config.anthropicVersion));
-    config.timeoutSeconds = LoadInt(j, "timeoutSeconds", config.timeoutSeconds);
-    config.temperature = LoadDouble(j, "temperature", config.temperature);
-    config.maxTokens = LoadInt(j, "maxTokens", LoadInt(j, "max_tokens", config.maxTokens));
+    config.baseUrl = JsonString(j, "baseUrl");
+    config.apiKey = JsonString(j, "apiKey");
+    config.modelName = JsonString(j, "modelName");
+    config.organization = JsonString(j, "organization");
+    config.anthropicVersion = JsonString(j, "anthropicVersion", JsonString(j, "anthropic-version", config.anthropicVersion));
+    config.timeoutSeconds = JsonInt(j, "timeoutSeconds", config.timeoutSeconds);
+    config.temperature = JsonDouble(j, "temperature", config.temperature);
+    config.maxTokens = JsonInt(j, "maxTokens", JsonInt(j, "max_tokens", config.maxTokens));
     if (j.contains("extraParams") && j["extraParams"].is_object()) {
         config.extraParams = j["extraParams"];
     }
-    LoadHeaders(j, config.headers);
+    config.headers = JsonStringMap(j, "headers");
     return {config, ""};
 }
 

@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -54,12 +55,54 @@ inline float JsonFloat(const nlohmann::json& j, const std::string& key, float fa
     return j[key].get<float>();
 }
 
+inline double JsonDouble(const nlohmann::json& j, const std::string& key, double fallback = 0.0)
+{
+    if (!j.is_object() || !j.contains(key) || !j[key].is_number()) {
+        return fallback;
+    }
+    return j[key].get<double>();
+}
+
 inline bool JsonBool(const nlohmann::json& j, const std::string& key, bool fallback = false)
 {
     if (!j.is_object() || !j.contains(key) || !j[key].is_boolean()) {
         return fallback;
     }
     return j[key].get<bool>();
+}
+
+inline std::unordered_map<std::string, std::string> JsonStringMap(const nlohmann::json& j, const std::string& key)
+{
+    std::unordered_map<std::string, std::string> values;
+    if (!j.is_object() || !j.contains(key) || !j[key].is_object()) {
+        return values;
+    }
+    for (auto it = j[key].begin(); it != j[key].end(); ++it) {
+        if (it.value().is_string()) {
+            values[it.key()] = it.value().get<std::string>();
+        }
+    }
+    return values;
+}
+
+inline bool HasInvalidString(const nlohmann::json& j, const std::string& key)
+{
+    return j.is_object() && j.contains(key) && !j[key].is_string();
+}
+
+inline bool HasInvalidInteger(const nlohmann::json& j, const std::string& key)
+{
+    return j.is_object() && j.contains(key) && !j[key].is_number_integer();
+}
+
+inline bool HasInvalidNumber(const nlohmann::json& j, const std::string& key)
+{
+    return j.is_object() && j.contains(key) && !j[key].is_number();
+}
+
+inline bool HasInvalidObject(const nlohmann::json& j, const std::string& key)
+{
+    return j.is_object() && j.contains(key) && !j[key].is_object();
 }
 
 inline nlohmann::json JsonObject(const nlohmann::json& value)

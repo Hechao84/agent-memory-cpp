@@ -68,7 +68,23 @@ MemoryModelConfig model;
 4. 继续补 HTTP/MCP 边界组合：wrong auth token、unknown route、invalid params、MCP notification 经 HTTP 返回 202 等。
 5. `curl_client` 直接测试暂缓，建议等模型客户端/HTTP transport 重构时配合 mock HTTP 或本地测试 server 一起补。
 
-### 4. 关于 #17：`float`/`double` 统一为 `double` 的收益有限
+### 4. 关于 #8：配置解析 helper 重复的处理边界
+
+认同 `model_config.cpp`、`model_client_factory.cpp`、`server_options.cpp` 中存在配置解析 helper 重复，但不建议把 server 侧解析逻辑改成宽松模式，也不建议为了合并而把 server 专属的严格 helper 抽到通用层。
+
+原因：
+
+- model 侧解析是宽松语义：字段缺失或类型不匹配时使用默认值，并由后续 model validate 给出错误。
+- server 侧解析是严格语义：部署配置类型写错应尽早失败，不能静默回退默认值；否则可能导致端口、auth、payload limit、MCP path 等关键配置与用户预期不一致。
+- 如果严格 helper 目前只有 `server_options.cpp` 使用，保留在该文件匿名命名空间中更清晰，抽到 `json_helpers.h` 收益有限，还会让通用 JSON helper 承担 server 专属策略。
+
+本轮处理边界：
+
+- 只抽取 model 侧共用宽松 helper：`JsonDouble`、`JsonStringMap`、`HasInvalidString`、`HasInvalidInteger`、`HasInvalidNumber`、`HasInvalidObject`。
+- `model_config.cpp` 和 `model_client_factory.cpp` 删除重复的 `LoadString`/`LoadInt`/`LoadDouble`/`LoadHeaders`/`HasInvalid*`，改用 `json_helpers.h`。
+- `server_options.cpp` 保持现状，继续保留严格 `LoadString`/`LoadInt`/`LoadSize`/`LoadBool`/`LoadSubObject`。
+
+### 5. 关于 #17：`float`/`double` 统一为 `double` 的收益有限
 
 认同当前存在类型不一致，但不建议优先把公共 `confidence` 字段从 `float` 改为 `double`。
 
