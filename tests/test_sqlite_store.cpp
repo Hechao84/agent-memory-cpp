@@ -278,6 +278,36 @@ bool TestLongTermMemoryAndSearch()
     return true;
 }
 
+bool TestSearchLikeFallbackEscapesWildcards()
+{
+    MemorySqliteStore store(TempDbPath("like_escape.db").string());
+    if (!store.Initialize()) {
+        std::cerr << "sqlite initialize failed\n";
+        return false;
+    }
+
+    if (!store.SaveSummary("agent-1", "session-1", "topic", "ordinary", "ordinary summary", 0.8F,
+                           {"event://ordinary"}) ||
+        !store.SaveSummary("agent-1", "session-1", "topic", "literal_percent", "contains 100% marker", 0.8F,
+                           {"event://percent"})) {
+        std::cerr << "summary save failed for like escape test\n";
+        return false;
+    }
+
+    MemorySearchRequest search;
+    search.agentId = "agent-1";
+    search.sessionId = "session-1";
+    search.query = "%";
+    search.limit = 10;
+    auto results = store.SearchLongTermMemory(search);
+    if (results.size() != 1 || results[0].content.find("100% marker") == std::string::npos ||
+        results[0].metadata.value("scoreSource", "") != "like_fallback") {
+        std::cerr << "LIKE fallback should treat percent as a literal\n";
+        return false;
+    }
+    return true;
+}
+
 bool TestWriterTransactionRollback()
 {
     MemorySqliteStore store(TempDbPath("writer_rollback.db").string());
@@ -362,7 +392,8 @@ bool TestTransactions()
 int main()
 {
     if (!TestEventsAndCursors() || !TestPayloads() || !TestLongTermMemoryAndSearch() ||
-        !TestWriterTransactionRollback() || !TestUninitializedTransactionDoesNotInitialize() || !TestTransactions()) {
+        !TestSearchLikeFallbackEscapesWildcards() || !TestWriterTransactionRollback() ||
+        !TestUninitializedTransactionDoesNotInitialize() || !TestTransactions()) {
         return 1;
     }
     return 0;

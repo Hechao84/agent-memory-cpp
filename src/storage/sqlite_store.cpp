@@ -175,6 +175,19 @@ int CursorToInt(const std::string& cursor)
     }
 }
 
+std::string EscapeLikePattern(const std::string& value)
+{
+    std::string escaped;
+    escaped.reserve(value.size());
+    for (char ch : value) {
+        if (ch == '\\' || ch == '%' || ch == '_') {
+            escaped.push_back('\\');
+        }
+        escaped.push_back(ch);
+    }
+    return escaped;
+}
+
 struct SearchScoreConfig
 {
     double summaryWeight{1.0};
@@ -909,11 +922,11 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
     }
 
     if (results.empty()) {
-        std::string pattern = "%" + request.query + "%";
+        std::string pattern = "%" + EscapeLikePattern(request.query) + "%";
         {
             const char* sql = "SELECT id, level, topic, summary, source_refs_json FROM memory_summaries "
                               "WHERE agent_id = ? AND (? = '' OR session_id = ?) AND "
-                              "(topic LIKE ? OR summary LIKE ?) "
+                              "(topic LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\') "
                               "ORDER BY updated_at DESC, id DESC LIMIT ?;";
             SQLiteStatement stmt(db_, sql);
             if (stmt) {
@@ -939,7 +952,7 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
         {
             const char* sql = "SELECT id, agent_id, type, name, summary, source_refs_json, metadata_json FROM memory_entities "
                               "WHERE active = 1 AND agent_id = ? AND "
-                              "(id LIKE ? OR type LIKE ? OR name LIKE ? OR summary LIKE ?) "
+                              "(id LIKE ? ESCAPE '\\' OR type LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\') "
                               "ORDER BY updated_at DESC LIMIT ?;";
             SQLiteStatement stmt(db_, sql);
             if (stmt) {
@@ -966,7 +979,7 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
         {
             const char* sql = "SELECT id, agent_id, from_entity, relation, to_entity, source_refs_json FROM memory_relations "
                               "WHERE active = 1 AND agent_id = ? AND "
-                              "(from_entity LIKE ? OR relation LIKE ? OR to_entity LIKE ?) "
+                              "(from_entity LIKE ? ESCAPE '\\' OR relation LIKE ? ESCAPE '\\' OR to_entity LIKE ? ESCAPE '\\') "
                               "ORDER BY updated_at DESC, id DESC LIMIT ?;";
             SQLiteStatement stmt(db_, sql);
             if (stmt) {
