@@ -625,6 +625,8 @@ Authorization: Bearer <token>
 
 ## MCP Client 集成
 
+`serverInfo.version` 由 CMake `PROJECT_VERSION` 注入，示例中的当前版本为 `0.1.0`。
+
 ### Endpoint
 
 默认 MCP-over-HTTP endpoint：

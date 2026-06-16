@@ -10,12 +10,15 @@
 #include <vector>
 
 #include "agent_memory/builtin_memory_runtime.h"
+#include "context_builder.h"
+#include "curl_client.h"
 #include "file_util.h"
 #include "path_util.h"
 #include "payload_query.h"
 #include "payload_service.h"
 #include "runtime_paths.h"
 #include "runtime_store_initializer.h"
+#include "sqlite_store.h"
 #include "store.h"
 
 namespace fs = std::filesystem;
@@ -49,6 +52,96 @@ public:
 private:
     std::string response_;
 };
+
+bool TestDirectServiceCoverage()
+{
+    CurlGlobalScope curlScope;
+    if (CurlClient::UrlEscape("a b%") != "a%20b%25") {
+        std::cerr << "CurlClient UrlEscape failed\n";
+        return false;
+    }
+
+    fs::path root = fs::temp_directory_path() / "agent_memory_cpp_direct_service_test";
+    fs::remove_all(root);
+
+    MemoryConfig config;
+    config.dataPath = root.string();
+    config.enablePayloadOffload = true;
+    config.offloadThresholdChars = 5;
+
+    fs::create_directories(root / "memory_runtime");
+    MemorySqliteStore store((root / "memory_runtime" / "memory.db").string());
+    if (!store.Initialize()) {
+        std::cerr << "direct sqlite store init failed\n";
+        return false;
+    }
+
+    PayloadService payloadService(config, config.dataPath, &store);
+    MemoryPayloadWriteRequest smallPayload;
+    smallPayload.agentId = "agent-direct";
+    smallPayload.sessionId = "session-direct";
+    smallPayload.content = "tiny";
+    smallPayload.contentType = "text/plain";
+    auto inlinePayload = payloadService.WritePayload(smallPayload);
+    if (!inlinePayload || inlinePayload.offloaded || inlinePayload.replacementContent != "tiny") {
+        std::cerr << "direct PayloadService inline write failed\n";
+        return false;
+    }
+
+    MemoryPayloadWriteRequest largePayload = smallPayload;
+    largePayload.content = "large payload content";
+    largePayload.toolName = "DirectTool";
+    auto offloadedPayload = payloadService.WritePayload(largePayload);
+    if (!offloadedPayload || !offloadedPayload.offloaded || offloadedPayload.payload.uri.empty()) {
+        std::cerr << "direct PayloadService offload failed\n";
+        return false;
+    }
+    auto readPayload = payloadService.ReadPayload(offloadedPayload.payload.uri);
+    if (!readPayload || readPayload.content != largePayload.content) {
+        std::cerr << "direct PayloadService read failed\n";
+        return false;
+    }
+
+    MemoryEvent directEvent;
+    directEvent.type = MemoryEventType::MESSAGE_APPENDED;
+    directEvent.agentId = "agent-direct";
+    directEvent.sessionId = "session-direct";
+    directEvent.role = "user";
+    directEvent.content = "direct context message";
+    if (!store.SaveEvent(directEvent)) {
+        std::cerr << "direct context event setup failed\n";
+        return false;
+    }
+    if (!store.SaveSummary("agent-direct", "session-direct", "session", "direct", "Direct long-term summary", 0.7F, {"event:1"})) {
+        std::cerr << "direct context summary setup failed\n";
+        return false;
+    }
+
+    ContextBuilder builder(config, &store, &store, &store, &store);
+    MemoryContextRequest request;
+    request.agentId = "agent-direct";
+    request.sessionId = "session-direct";
+    auto context = builder.BuildContext(request);
+    if (!context) {
+        std::cerr << "direct ContextBuilder should succeed\n";
+        return false;
+    }
+    if (context.context.messages.empty()) {
+        std::cerr << "direct ContextBuilder should load messages\n";
+        return false;
+    }
+    if (context.context.payloadRefs.empty()) {
+        std::cerr << "direct ContextBuilder should load payload refs\n";
+        return false;
+    }
+    if (context.context.memoryText.find("Direct long-term summary") == std::string::npos) {
+        std::cerr << "direct ContextBuilder should load long-term summaries\n";
+        return false;
+    }
+
+    fs::remove_all(root);
+    return true;
+}
 
 bool TestUtilityModules()
 {
@@ -122,6 +215,9 @@ bool TestUtilityModules()
 int main()
 {
     if (!TestUtilityModules()) {
+        return 1;
+    }
+    if (!TestDirectServiceCoverage()) {
         return 1;
     }
 

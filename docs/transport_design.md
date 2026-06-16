@@ -88,7 +88,7 @@ Authorization: Bearer <token>
 服务信息：
 
 - `serverInfo.name = memory-server`
-- `serverInfo.version = 0.1.0`
+- `serverInfo.version` 由 CMake `PROJECT_VERSION` 注入，当前为 `0.1.0`
 - `protocolVersion = 2024-11-05`
 
 ### 工具列表

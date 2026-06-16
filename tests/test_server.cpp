@@ -17,6 +17,10 @@
 #include "server_options.h"
 #include <nlohmann/json.hpp>
 
+#ifndef AGENT_MEMORY_VERSION
+#define AGENT_MEMORY_VERSION "0.0.0"
+#endif
+
 using namespace agent_memory;
 
 namespace {
@@ -236,6 +240,8 @@ bool TestMcpProtocolCoverage()
 
     auto initialize = protocol.HandleJsonRpc({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}});
     bool ok = Check(initialize.contains("result"), "MCP initialize failed");
+    ok = Check(ok && initialize["result"]["serverInfo"].value("version", std::string()) == AGENT_MEMORY_VERSION,
+               "MCP initialize should expose build version");
     auto list = protocol.HandleJsonRpc({{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}});
     ok = Check(ok && list["result"]["tools"].size() >= 7, "MCP tools/list failed");
 

@@ -132,7 +132,10 @@ target_include_directories(agent_memory PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
     ${AGENT_MEMORY_THIRD_PARTY_DIR}/include
 )
-target_compile_definitions(agent_memory PRIVATE BUILDING_AGENT_MEMORY)
+target_compile_definitions(agent_memory PRIVATE
+    BUILDING_AGENT_MEMORY
+    AGENT_MEMORY_VERSION="${PROJECT_VERSION}"
+)
 target_link_libraries(agent_memory PUBLIC nlohmann_json::nlohmann_json)
 target_link_libraries(agent_memory PRIVATE ${AGENT_MEMORY_SQLITE_TARGET} CURL::libcurl pthread)
 
@@ -167,6 +170,7 @@ if(AGENT_MEMORY_BUILD_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/mcp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
     )
+    target_compile_definitions(memory-server PRIVATE AGENT_MEMORY_VERSION="${PROJECT_VERSION}")
     target_link_libraries(memory-server PRIVATE agent_memory nlohmann_json::nlohmann_json pthread)
 endif()
 
@@ -223,6 +227,7 @@ if(AGENT_MEMORY_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/transport/mcp
         ${CMAKE_CURRENT_SOURCE_DIR}/src/utils
     )
+    target_compile_definitions(server_tests PRIVATE AGENT_MEMORY_VERSION="${PROJECT_VERSION}")
     target_link_libraries(server_tests PRIVATE nlohmann_json::nlohmann_json pthread)
 endif()
 

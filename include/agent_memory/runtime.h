@@ -14,7 +14,17 @@
 
 namespace agent_memory {
 
-/** Full-feature memory runtime interface used by SDK callers and server transports. */
+/**
+ * Full-feature facade used by SDK callers and server transports.
+ *
+ * This interface intentionally groups the core agent-memory capabilities behind
+ * one runtime boundary. Keeping it as a facade lets SDK, REST, and MCP share the
+ * same integration point while the implementation remains free to split storage,
+ * payload, context, consolidation, search, and stats into narrower internal
+ * services. Prefer adding internal capability interfaces first; split this
+ * public facade only when multiple runtime implementations or partial-capability
+ * consumers make the dependency cost visible.
+ */
 class AGENT_MEMORY_API MemoryRuntime
 {
 public:

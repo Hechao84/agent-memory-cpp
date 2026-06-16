@@ -5,6 +5,10 @@
 #include "agent_memory/runtime.h"
 #include "json_memory_codec.h"
 
+#ifndef AGENT_MEMORY_VERSION
+#define AGENT_MEMORY_VERSION "0.0.0"
+#endif
+
 namespace agent_memory {
 
 MemoryMcpProtocol::MemoryMcpProtocol(MemoryRuntime& runtime, bool debugErrors)
@@ -48,7 +52,7 @@ void MemoryMcpProtocol::InitToolHandlers()
 
     methodHandlers_["initialize"] = [this](const nlohmann::json&, const nlohmann::json& id) {
         return Success(id, {{"protocolVersion", "2024-11-05"},
-                            {"serverInfo", {{"name", "memory-server"}, {"version", "0.1.0"}}},
+                            {"serverInfo", {{"name", "memory-server"}, {"version", AGENT_MEMORY_VERSION}}},
                             {"capabilities", {{"tools", nlohmann::json::object()}}}});
     };
     methodHandlers_["tools/list"] = [this](const nlohmann::json&, const nlohmann::json& id) {
