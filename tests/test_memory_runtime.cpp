@@ -158,7 +158,7 @@ int main()
     }
 
     auto repeatedConsolidationResult = runtime.Consolidate(consolidateRequest);
-    if (repeatedConsolidationResult.succeeded || repeatedConsolidationResult.processedEvents != 0) {
+    if (!repeatedConsolidationResult.succeeded || repeatedConsolidationResult.processedEvents != 0) {
         std::cerr << "incremental consolidation repeated already processed events\n";
         return 1;
     }
@@ -170,7 +170,7 @@ int main()
         return 1;
     }
     auto afterForceResult = runtime.Consolidate(consolidateRequest);
-    if (afterForceResult.succeeded || afterForceResult.processedEvents != 0) {
+    if (!afterForceResult.succeeded || afterForceResult.processedEvents != 0) {
         std::cerr << "forced consolidation should advance cursor\n";
         return 1;
     }

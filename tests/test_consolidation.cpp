@@ -298,6 +298,30 @@ bool TestMemoryUpdateWriterFailureStopsUpdate()
     return true;
 }
 
+bool TestConsolidationNoEventsSucceeds()
+{
+    InMemoryStore store;
+    MemoryUpdateWriter writer(store);
+    RuleBasedLongTermMemoryProcessor fallback;
+    ConsolidationService service(writer, &fallback);
+
+    MemoryConsolidationRequest request;
+    request.agentId = "agent-1";
+    request.sessionId = "session-1";
+    request.maxEvents = 10;
+
+    auto result = service.Consolidate(request, {}, nullptr);
+    if (!result || result.processedEvents != 0 || !result.error.code.empty()) {
+        std::cerr << "empty consolidation should succeed without error\n";
+        return false;
+    }
+    if (!store.summaries.empty() || !store.entities.empty() || !store.relations.empty()) {
+        std::cerr << "empty consolidation should not persist updates\n";
+        return false;
+    }
+    return true;
+}
+
 bool TestConsolidationFallback()
 {
     InMemoryStore store;
@@ -439,6 +463,9 @@ int main()
         return 1;
     }
     if (!TestMemoryUpdateWriterFailureStopsUpdate()) {
+        return 1;
+    }
+    if (!TestConsolidationNoEventsSucceeds()) {
         return 1;
     }
     if (!TestConsolidationFallback()) {

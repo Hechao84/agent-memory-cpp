@@ -24,6 +24,7 @@ MemoryConsolidationResult ConsolidationService::Consolidate(const MemoryConsolid
     result.processedEvents = static_cast<int>(buildResult.batch.events.size());
 
     if (buildResult.batch.events.empty()) {
+        result.succeeded = true;
         return result;
     }
 

@@ -79,7 +79,8 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
     std::string startCursor = request.forceReprocess ? std::string() : store->LoadConsolidationCursor(request.agentId, request.sessionId);
     std::vector<MemoryEvent> events = store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor);
     MemoryConsolidationResult result = consolidationService->Consolidate(request, events, model);
-    if (result.succeeded && store != nullptr && !store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor)) {
+    if (result.succeeded && store != nullptr && !result.nextCursor.empty() &&
+        !store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor)) {
         result.succeeded = false;
         result.error = {"cursor_save_failed", "failed to persist consolidation cursor", "", false};
     }
