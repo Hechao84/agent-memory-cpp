@@ -145,14 +145,27 @@ constexpr std::array<std::string_view, 6> VALID_TABLE_NAMES = {
     "memory_consolidation_cursors",
 };
 
+std::string SqliteErrorMessage(sqlite3* db)
+{
+    if (db == nullptr) {
+        return "sqlite database is not initialized";
+    }
+    std::string message = sqlite3_errmsg(db);
+    return message.empty() ? "sqlite operation failed" : message;
+}
+
+MemoryOperationResult SqliteFailure(sqlite3* db, const std::string& context)
+{
+    std::string details = SqliteErrorMessage(db);
+    if (!details.empty() && details != "not an error") {
+        std::fprintf(stderr, "[agent_memory] sqlite error in %s: %s\n", context.c_str(), details.c_str());
+    }
+    return MemoryFailure("sqlite_error", "sqlite operation failed", context + ": " + details, true);
+}
+
 void LogSqliteError(sqlite3* db, const std::string& context)
 {
-    if (db != nullptr) {
-        std::string msg = sqlite3_errmsg(db);
-        if (!msg.empty() && msg != "not an error") {
-            std::fprintf(stderr, "[agent_memory] sqlite error in %s: %s\n", context.c_str(), msg.c_str());
-        }
-    }
+    SqliteFailure(db, context);
 }
 
 void LogSqliteExecError(char* errMsg, const std::string& context)
@@ -317,26 +330,28 @@ class SqliteStoreTransaction : public MemoryStoreTransaction
 public:
     explicit SqliteStoreTransaction(MemorySqliteStore& store) : store_(store) {}
 
-    bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
-                     const std::string& topic, const std::string& summary, float confidence,
-                     const std::vector<std::string>& sourceRefs = {}) override
+    MemoryOperationResult SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
+                                      const std::string& topic, const std::string& summary, float confidence,
+                                      const std::vector<std::string>& sourceRefs = {}) override
     {
-        return store_.SaveSummaryUnlocked(agentId, sessionId, level, topic, summary, confidence, sourceRefs);
+        return store_.SaveSummaryUnlocked(agentId, sessionId, level, topic, summary, confidence, sourceRefs) ? MemorySuccess()
+                                                                                                            : SqliteFailure(store_.db_, "Transaction::SaveSummary");
     }
 
-    bool SaveEntity(const MemoryEntity& entity) override
+    MemoryOperationResult SaveEntity(const MemoryEntity& entity) override
     {
-        return store_.SaveEntityUnlocked(entity);
+        return store_.SaveEntityUnlocked(entity) ? MemorySuccess() : SqliteFailure(store_.db_, "Transaction::SaveEntity");
     }
 
-    bool SaveRelation(const MemoryRelation& relation) override
+    MemoryOperationResult SaveRelation(const MemoryRelation& relation) override
     {
-        return store_.SaveRelationUnlocked(relation);
+        return store_.SaveRelationUnlocked(relation) ? MemorySuccess() : SqliteFailure(store_.db_, "Transaction::SaveRelation");
     }
 
-    bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) override
+    MemoryOperationResult MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) override
     {
-        return store_.MarkEntityObsoleteUnlocked(entityId, supersededBy);
+        return store_.MarkEntityObsoleteUnlocked(entityId, supersededBy) ? MemorySuccess()
+                                                                         : SqliteFailure(store_.db_, "Transaction::MarkEntityObsolete");
     }
 
 private:
@@ -358,19 +373,19 @@ MemorySqliteStore::~MemorySqliteStore()
     }
 }
 
-bool MemorySqliteStore::Initialize()
+MemoryOperationResult MemorySqliteStore::Initialize()
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ != nullptr) {
-        return true;
+        return MemorySuccess();
     }
     if (sqlite3_open(dbPath_.c_str(), &db_) != SQLITE_OK) {
-        LogSqliteError(db_, "Initialize::open");
+        MemoryOperationResult result = SqliteFailure(db_, "Initialize::open");
         if (db_ != nullptr) {
             sqlite3_close(db_);
         }
         db_ = nullptr;
-        return false;
+        return result;
     }
 
     sqlite3_busy_timeout(db_, 5000);
@@ -522,35 +537,36 @@ bool MemorySqliteStore::Initialize()
                   "END;") && ok;
 
     if (!ok) {
-        LogSqliteError(db_, "Initialize::schema");
+        return SqliteFailure(db_, "Initialize::schema");
     }
-    return ok;
+    return MemorySuccess();
 }
 
-bool MemorySqliteStore::SaveEvent(const MemoryEvent& event)
+MemoryOperationResult MemorySqliteStore::SaveEvent(const MemoryEvent& event)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
-    return SaveEventUnlocked(event);
+    return SaveEventUnlocked(event) ? MemorySuccess() : SqliteFailure(db_, "SaveEvent");
 }
 
-bool MemorySqliteStore::SavePayload(const MemoryPayloadRef& payload)
+MemoryOperationResult MemorySqliteStore::SavePayload(const MemoryPayloadRef& payload)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
-    return SavePayloadUnlocked(payload);
+    return SavePayloadUnlocked(payload) ? MemorySuccess() : SqliteFailure(db_, "SavePayload");
 }
 
-std::vector<MemoryPayloadRef> MemorySqliteStore::LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const
+MemoryPayloadRefsResult MemorySqliteStore::LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    std::vector<MemoryPayloadRef> payloads;
+    MemoryPayloadRefsResult result;
     if (db_ == nullptr) {
-        return payloads;
+        result.error = MemoryFailure("store_unavailable", "sqlite store is not initialized").error;
+        return result;
     }
 
     const char* sql = "SELECT agent_id, session_id, ref, content_type, tool_name, summary, original_chars, created_at "
@@ -558,15 +574,16 @@ std::vector<MemoryPayloadRef> MemorySqliteStore::LoadRecentPayloads(const std::s
                       "ORDER BY created_at DESC, id DESC LIMIT ?;";
     SQLiteStatement stmt(db_, sql);
     if (!stmt) {
-        LogSqliteError(db_, "LoadRecentPayloads::prepare");
-        return payloads;
+        result.error = SqliteFailure(db_, "LoadRecentPayloads::prepare").error;
+        return result;
     }
 
     sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 4, limit > 0 ? limit : 20);
-    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
+    int rc = SQLITE_ROW;
+    while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
         MemoryPayloadRef payload;
         payload.agentId = ColumnText(stmt.get(), 0);
         payload.sessionId = ColumnText(stmt.get(), 1);
@@ -576,154 +593,165 @@ std::vector<MemoryPayloadRef> MemorySqliteStore::LoadRecentPayloads(const std::s
         payload.summary = ColumnText(stmt.get(), 5);
         payload.originalChars = sqlite3_column_int(stmt.get(), 6);
         payload.createdAt = ColumnText(stmt.get(), 7);
-        payloads.push_back(std::move(payload));
+        result.payloads.push_back(std::move(payload));
     }
-    return payloads;
+    if (rc != SQLITE_DONE) {
+        result.error = SqliteFailure(db_, "LoadRecentPayloads::step").error;
+        return result;
+    }
+    result.succeeded = true;
+    return result;
 }
 
-bool MemorySqliteStore::SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
-                                    const std::string& topic, const std::string& summary, float confidence,
-                                    const std::vector<std::string>& sourceRefs)
+MemoryOperationResult MemorySqliteStore::SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
+                                                       const std::string& topic, const std::string& summary, float confidence,
+                                                       const std::vector<std::string>& sourceRefs)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
-    return SaveSummaryUnlocked(agentId, sessionId, level, topic, summary, confidence, sourceRefs);
+    return SaveSummaryUnlocked(agentId, sessionId, level, topic, summary, confidence, sourceRefs) ? MemorySuccess()
+                                                                                                  : SqliteFailure(db_, "SaveSummary");
 }
 
-bool MemorySqliteStore::SaveEntity(const MemoryEntity& entity)
+MemoryOperationResult MemorySqliteStore::SaveEntity(const MemoryEntity& entity)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
-    return SaveEntityUnlocked(entity);
+    return SaveEntityUnlocked(entity) ? MemorySuccess() : SqliteFailure(db_, "SaveEntity");
 }
 
-bool MemorySqliteStore::SaveRelation(const MemoryRelation& relation)
+MemoryOperationResult MemorySqliteStore::SaveRelation(const MemoryRelation& relation)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
-    return SaveRelationUnlocked(relation);
+    return SaveRelationUnlocked(relation) ? MemorySuccess() : SqliteFailure(db_, "SaveRelation");
 }
 
-bool MemorySqliteStore::RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work)
+MemoryOperationResult MemorySqliteStore::RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
     if (!ExecuteUnlocked("BEGIN IMMEDIATE TRANSACTION;")) {
-        LogSqliteError(db_, "RunInTransaction::begin");
-        return false;
+        return SqliteFailure(db_, "RunInTransaction::begin");
     }
     SqliteStoreTransaction transaction(*this);
-    bool ok = work(transaction);
-    if (ok) {
-        ok = ExecuteUnlocked("COMMIT;");
-        if (!ok) {
-            LogSqliteError(db_, "RunInTransaction::commit");
+    MemoryOperationResult result = work(transaction);
+    if (result) {
+        if (!ExecuteUnlocked("COMMIT;")) {
+            auto commitResult = SqliteFailure(db_, "RunInTransaction::commit");
             ExecuteUnlocked("ROLLBACK;");
+            return commitResult;
         }
-        return ok;
+        return MemorySuccess();
     }
     ExecuteUnlocked("ROLLBACK;");
-    return false;
+    return result.error ? result : MemoryFailure("transaction_failed", "transaction work failed");
 }
 
-bool MemorySqliteStore::MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy)
+MemoryOperationResult MemorySqliteStore::MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
-    return MarkEntityObsoleteUnlocked(entityId, supersededBy);
+    return MarkEntityObsoleteUnlocked(entityId, supersededBy) ? MemorySuccess() : SqliteFailure(db_, "MarkEntityObsolete");
 }
 
-std::string MemorySqliteStore::LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const
+ConsolidationCursorResult MemorySqliteStore::LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    ConsolidationCursorResult result;
     if (db_ == nullptr) {
-        return {};
+        result.error = MemoryFailure("store_unavailable", "sqlite store is not initialized").error;
+        return result;
     }
 
     const char* sql = "SELECT cursor FROM memory_consolidation_cursors WHERE agent_id = ? AND session_id = ?;";
     SQLiteStatement stmt(db_, sql);
     if (!stmt) {
-        LogSqliteError(db_, "LoadConsolidationCursor::prepare");
-        return {};
+        result.error = SqliteFailure(db_, "LoadConsolidationCursor::prepare").error;
+        return result;
     }
     sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
 
-    if (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-        return std::to_string(sqlite3_column_int(stmt.get(), 0));
+    int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_ROW) {
+        result.cursor = std::to_string(sqlite3_column_int(stmt.get(), 0));
+    } else if (rc != SQLITE_DONE) {
+        result.error = SqliteFailure(db_, "LoadConsolidationCursor::step").error;
+        return result;
     }
-    return {};
+    result.succeeded = true;
+    return result;
 }
 
-bool MemorySqliteStore::SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor)
+MemoryOperationResult MemorySqliteStore::SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (db_ == nullptr) {
-        return false;
+        return MemoryFailure("store_unavailable", "sqlite store is not initialized");
     }
-    return SaveConsolidationCursorUnlocked(agentId, sessionId, cursor);
+    return SaveConsolidationCursorUnlocked(agentId, sessionId, cursor) ? MemorySuccess()
+                                                                       : SqliteFailure(db_, "SaveConsolidationCursor");
 }
 
-std::vector<MemoryEvent> MemorySqliteStore::LoadEventsAfterCursor(const std::string& agentId,
-                                                                 const std::string& sessionId, const std::string& cursor) const
+MemoryEventsResult MemorySqliteStore::LoadEventsAfterCursor(const std::string& agentId,
+                                                             const std::string& sessionId, const std::string& cursor) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    std::vector<MemoryEvent> events;
+    MemoryEventsResult result;
     if (db_ == nullptr) {
-        return events;
+        result.error = MemoryFailure("store_unavailable", "sqlite store is not initialized").error;
+        return result;
     }
 
     int cursorValue = CursorToInt(cursor);
-
-    if (!sessionId.empty()) {
-        const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
-                          "FROM memory_events WHERE id > ? AND agent_id = ? AND session_id = ? "
-                          "ORDER BY id ASC;";
-        SQLiteStatement stmt(db_, sql);
-        if (!stmt) {
-            return events;
-        }
-        sqlite3_bind_int(stmt.get(), 1, cursorValue);
-        sqlite3_bind_text(stmt.get(), 2, agentId.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-            events.push_back(ReadEventRow(stmt.get()));
-        }
-    } else {
-        const char* sql = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
-                          "FROM memory_events WHERE id > ? AND agent_id = ? "
-                          "ORDER BY id ASC;";
-        SQLiteStatement stmt(db_, sql);
-        if (!stmt) {
-            return events;
-        }
-        sqlite3_bind_int(stmt.get(), 1, cursorValue);
-        sqlite3_bind_text(stmt.get(), 2, agentId.c_str(), -1, SQLITE_TRANSIENT);
-        while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-            events.push_back(ReadEventRow(stmt.get()));
-        }
+    const char* sqlWithSession = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
+                                 "FROM memory_events WHERE id > ? AND agent_id = ? AND session_id = ? "
+                                 "ORDER BY id ASC;";
+    const char* sqlWithoutSession = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
+                                    "FROM memory_events WHERE id > ? AND agent_id = ? "
+                                    "ORDER BY id ASC;";
+    SQLiteStatement stmt(db_, sessionId.empty() ? sqlWithoutSession : sqlWithSession);
+    if (!stmt) {
+        result.error = SqliteFailure(db_, "LoadEventsAfterCursor::prepare").error;
+        return result;
     }
-
-    return events;
+    sqlite3_bind_int(stmt.get(), 1, cursorValue);
+    sqlite3_bind_text(stmt.get(), 2, agentId.c_str(), -1, SQLITE_TRANSIENT);
+    if (!sessionId.empty()) {
+        sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    int rc = SQLITE_ROW;
+    while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+        result.events.push_back(ReadEventRow(stmt.get()));
+    }
+    if (rc != SQLITE_DONE) {
+        result.error = SqliteFailure(db_, "LoadEventsAfterCursor::step").error;
+        return result;
+    }
+    result.succeeded = true;
+    return result;
 }
 
-std::vector<MemoryEvent> MemorySqliteStore::LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
-                                                              int limit) const
+
+MemoryEventsResult MemorySqliteStore::LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
+                                                         int limit) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    std::vector<MemoryEvent> events;
+    MemoryEventsResult result;
     if (db_ == nullptr) {
-        return events;
+        result.error = MemoryFailure("store_unavailable", "sqlite store is not initialized").error;
+        return result;
     }
 
     int effectiveLimit = limit > 0 ? limit : 20;
@@ -732,26 +760,35 @@ std::vector<MemoryEvent> MemorySqliteStore::LoadRecentEvents(const std::string& 
                       "ORDER BY id DESC LIMIT ?;";
     SQLiteStatement stmt(db_, sql);
     if (!stmt) {
-        return events;
+        result.error = SqliteFailure(db_, "LoadRecentEvents::prepare").error;
+        return result;
     }
     sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_int(stmt.get(), 4, effectiveLimit);
-    while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-        events.push_back(ReadEventRow(stmt.get()));
+    int rc = SQLITE_ROW;
+    while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+        result.events.push_back(ReadEventRow(stmt.get()));
     }
-    std::reverse(events.begin(), events.end());
-    return events;
+    if (rc != SQLITE_DONE) {
+        result.error = SqliteFailure(db_, "LoadRecentEvents::step").error;
+        return result;
+    }
+    std::reverse(result.events.begin(), result.events.end());
+    result.succeeded = true;
+    return result;
 }
 
-LongTermMemorySnapshot MemorySqliteStore::LoadLongTermMemory(const std::string& agentId, int limit,
-                                                              const std::string& sessionId) const
+LongTermMemorySnapshotResult MemorySqliteStore::LoadLongTermMemory(const std::string& agentId, int limit,
+                                                                    const std::string& sessionId) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    LongTermMemorySnapshot snapshot;
+    LongTermMemorySnapshotResult result;
+    auto& snapshot = result.snapshot;
     if (db_ == nullptr) {
-        return snapshot;
+        result.error = MemoryFailure("store_unavailable", "sqlite store is not initialized").error;
+        return result;
     }
 
     int effectiveLimit = limit > 0 ? limit : 100;
@@ -762,20 +799,27 @@ LongTermMemorySnapshot MemorySqliteStore::LoadLongTermMemory(const std::string& 
                           "WHERE agent_id = ? AND (? = '' OR session_id = ?) "
                           "ORDER BY updated_at DESC, id DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
-        if (stmt) {
-            sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt.get(), 4, effectiveLimit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                LongTermSummaryRecord record;
-                record.level = ColumnText(stmt.get(), 0);
-                record.topic = ColumnText(stmt.get(), 1);
-                record.summary = ColumnText(stmt.get(), 2);
-                record.confidence = static_cast<float>(sqlite3_column_double(stmt.get(), 3));
-                record.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
-                snapshot.summaries.push_back(std::move(record));
-            }
+        if (!stmt) {
+            result.error = SqliteFailure(db_, "LoadLongTermMemory::summaries_prepare").error;
+            return result;
+        }
+        sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt.get(), 4, effectiveLimit);
+        int rc = SQLITE_ROW;
+        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+            LongTermSummaryRecord record;
+            record.level = ColumnText(stmt.get(), 0);
+            record.topic = ColumnText(stmt.get(), 1);
+            record.summary = ColumnText(stmt.get(), 2);
+            record.confidence = static_cast<float>(sqlite3_column_double(stmt.get(), 3));
+            record.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+            snapshot.summaries.push_back(std::move(record));
+        }
+        if (rc != SQLITE_DONE) {
+            result.error = SqliteFailure(db_, "LoadLongTermMemory::summaries_step").error;
+            return result;
         }
     }
 
@@ -784,21 +828,28 @@ LongTermMemorySnapshot MemorySqliteStore::LoadLongTermMemory(const std::string& 
                           "WHERE active = 1 AND agent_id = ? "
                           "ORDER BY updated_at DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
-        if (stmt) {
-            sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt.get(), 2, effectiveLimit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                MemoryEntity entity;
-                entity.id = ColumnText(stmt.get(), 0);
-                entity.agentId = ColumnText(stmt.get(), 1);
-                entity.entityType = ColumnText(stmt.get(), 2);
-                entity.name = ColumnText(stmt.get(), 3);
-                entity.summary = ColumnText(stmt.get(), 4);
-                entity.confidence = static_cast<float>(sqlite3_column_double(stmt.get(), 5));
-                entity.sourceRefs = ParseSourceRefsColumn(stmt.get(), 6);
-                entity.metadata = ParseJsonColumn(stmt.get(), 7);
-                snapshot.entities.push_back(std::move(entity));
-            }
+        if (!stmt) {
+            result.error = SqliteFailure(db_, "LoadLongTermMemory::entities_prepare").error;
+            return result;
+        }
+        sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt.get(), 2, effectiveLimit);
+        int rc = SQLITE_ROW;
+        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+            MemoryEntity entity;
+            entity.id = ColumnText(stmt.get(), 0);
+            entity.agentId = ColumnText(stmt.get(), 1);
+            entity.entityType = ColumnText(stmt.get(), 2);
+            entity.name = ColumnText(stmt.get(), 3);
+            entity.summary = ColumnText(stmt.get(), 4);
+            entity.confidence = static_cast<float>(sqlite3_column_double(stmt.get(), 5));
+            entity.sourceRefs = ParseSourceRefsColumn(stmt.get(), 6);
+            entity.metadata = ParseJsonColumn(stmt.get(), 7);
+            snapshot.entities.push_back(std::move(entity));
+        }
+        if (rc != SQLITE_DONE) {
+            result.error = SqliteFailure(db_, "LoadLongTermMemory::entities_step").error;
+            return result;
         }
     }
 
@@ -808,37 +859,52 @@ LongTermMemorySnapshot MemorySqliteStore::LoadLongTermMemory(const std::string& 
                           "WHERE active = 1 AND agent_id = ? "
                           "ORDER BY updated_at DESC, id DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
-        if (stmt) {
-            sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt.get(), 2, effectiveLimit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                MemoryRelation relation;
-                relation.id = std::to_string(sqlite3_column_int(stmt.get(), 0));
-                relation.agentId = ColumnText(stmt.get(), 1);
-                relation.fromEntityId = ColumnText(stmt.get(), 2);
-                relation.relationType = ColumnText(stmt.get(), 3);
-                relation.toEntityId = ColumnText(stmt.get(), 4);
-                relation.confidence = static_cast<float>(sqlite3_column_double(stmt.get(), 5));
-                relation.sourceRefs = ParseSourceRefsColumn(stmt.get(), 6);
-                relation.metadata = ParseJsonColumn(stmt.get(), 7);
-                snapshot.relations.push_back(std::move(relation));
-            }
+        if (!stmt) {
+            result.error = SqliteFailure(db_, "LoadLongTermMemory::relations_prepare").error;
+            return result;
+        }
+        sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt.get(), 2, effectiveLimit);
+        int rc = SQLITE_ROW;
+        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+            MemoryRelation relation;
+            relation.id = std::to_string(sqlite3_column_int(stmt.get(), 0));
+            relation.agentId = ColumnText(stmt.get(), 1);
+            relation.fromEntityId = ColumnText(stmt.get(), 2);
+            relation.relationType = ColumnText(stmt.get(), 3);
+            relation.toEntityId = ColumnText(stmt.get(), 4);
+            relation.confidence = static_cast<float>(sqlite3_column_double(stmt.get(), 5));
+            relation.sourceRefs = ParseSourceRefsColumn(stmt.get(), 6);
+            relation.metadata = ParseJsonColumn(stmt.get(), 7);
+            snapshot.relations.push_back(std::move(relation));
+        }
+        if (rc != SQLITE_DONE) {
+            result.error = SqliteFailure(db_, "LoadLongTermMemory::relations_step").error;
+            return result;
         }
     }
 
-    return snapshot;
+    result.succeeded = true;
+    return result;
 }
 
-std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const MemorySearchRequest& request) const
+MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySearchRequest& request) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    std::vector<MemorySearchResult> results;
-    if (db_ == nullptr || request.query.empty()) {
-        return results;
+    MemorySearchStoreResult result;
+    auto& results = result.results;
+    if (db_ == nullptr) {
+        result.error = MemoryFailure("store_unavailable", "sqlite store is not initialized").error;
+        return result;
+    }
+    if (request.query.empty()) {
+        result.succeeded = true;
+        return result;
     }
 
     int limit = request.limit > 0 ? request.limit : 10;
     std::string ftsQuery = Fts5EscapeQuery(request.query);
+    bool ftsFailed = false;
 
     {
         const char* sql = "SELECT s.id, s.level, s.topic, s.summary, s.source_refs_json, bm25(fts_memory_summaries) AS rank "
@@ -848,27 +914,35 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                           "AND fts_memory_summaries MATCH ? "
                           "ORDER BY rank ASC, s.updated_at DESC, s.id DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
-        if (stmt) {
-            sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt.get(), 2, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt.get(), 3, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt.get(), 4, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt.get(), 5, limit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                MemorySearchResult result;
-                result.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
-                result.type = "summary";
-                result.content = ColumnText(stmt.get(), 1) + ": " +
-                                 ColumnText(stmt.get(), 2) + ": " +
-                                 ColumnText(stmt.get(), 3);
-                result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
-                ApplyFtsScore(result, sqlite3_column_double(stmt.get(), 5));
-                results.push_back(std::move(result));
-            }
+        if (!stmt) {
+            result.error = SqliteFailure(db_, "SearchLongTermMemory::fts_summaries_prepare").error;
+            return result;
+        }
+        sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 2, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 3, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 4, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt.get(), 5, limit);
+        int rc = SQLITE_ROW;
+        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+            MemorySearchResult item;
+            item.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
+            item.type = "summary";
+            item.content = ColumnText(stmt.get(), 1) + ": " +
+                           ColumnText(stmt.get(), 2) + ": " +
+                           ColumnText(stmt.get(), 3);
+            item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+            ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 5));
+            results.push_back(std::move(item));
+        }
+        if (rc != SQLITE_DONE) {
+            LogSqliteError(db_, "SearchLongTermMemory::fts_summaries_step");
+            results.clear();
+            ftsFailed = true;
         }
     }
 
-    {
+    if (!ftsFailed) {
         const char* sql = "SELECT e.id, e.agent_id, e.type, e.name, e.summary, e.source_refs_json, e.metadata_json, bm25(fts_memory_entities) AS rank "
                           "FROM memory_entities e "
                           "JOIN fts_memory_entities ON fts_memory_entities.rowid = e.rowid "
@@ -876,26 +950,34 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                           "AND fts_memory_entities MATCH ? "
                           "ORDER BY rank ASC, e.updated_at DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
-        if (stmt) {
-            sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt.get(), 3, limit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                MemorySearchResult result;
-                result.id = ColumnText(stmt.get(), 0);
-                result.type = "entity";
-                result.content = ColumnText(stmt.get(), 2) + ": " +
-                                 ColumnText(stmt.get(), 3) + ": " +
-                                 ColumnText(stmt.get(), 4);
-                result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
-                result.metadata = ParseJsonColumn(stmt.get(), 6);
-                ApplyFtsScore(result, sqlite3_column_double(stmt.get(), 7));
-                results.push_back(std::move(result));
-            }
+        if (!stmt) {
+            result.error = SqliteFailure(db_, "SearchLongTermMemory::fts_entities_prepare").error;
+            return result;
+        }
+        sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt.get(), 3, limit);
+        int rc = SQLITE_ROW;
+        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+            MemorySearchResult item;
+            item.id = ColumnText(stmt.get(), 0);
+            item.type = "entity";
+            item.content = ColumnText(stmt.get(), 2) + ": " +
+                           ColumnText(stmt.get(), 3) + ": " +
+                           ColumnText(stmt.get(), 4);
+            item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
+            item.metadata = ParseJsonColumn(stmt.get(), 6);
+            ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 7));
+            results.push_back(std::move(item));
+        }
+        if (rc != SQLITE_DONE) {
+            LogSqliteError(db_, "SearchLongTermMemory::fts_entities_step");
+            results.clear();
+            ftsFailed = true;
         }
     }
 
-    {
+    if (!ftsFailed) {
         const char* sql = "SELECT r.id, r.from_entity, r.relation, r.to_entity, r.source_refs_json, bm25(fts_memory_relations) AS rank "
                           "FROM memory_relations r "
                           "JOIN fts_memory_relations ON fts_memory_relations.rowid = r.id "
@@ -903,21 +985,29 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                           "AND fts_memory_relations MATCH ? "
                           "ORDER BY rank ASC, r.updated_at DESC, r.id DESC LIMIT ?;";
         SQLiteStatement stmt(db_, sql);
-        if (stmt) {
-            sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(stmt.get(), 3, limit);
-            while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                MemorySearchResult result;
-                result.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
-                result.type = "relation";
-                result.content = ColumnText(stmt.get(), 1) + " " +
-                                 ColumnText(stmt.get(), 2) + " " +
-                                 ColumnText(stmt.get(), 3);
-                result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
-                ApplyFtsScore(result, sqlite3_column_double(stmt.get(), 5));
-                results.push_back(std::move(result));
-            }
+        if (!stmt) {
+            result.error = SqliteFailure(db_, "SearchLongTermMemory::fts_relations_prepare").error;
+            return result;
+        }
+        sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt.get(), 3, limit);
+        int rc = SQLITE_ROW;
+        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+            MemorySearchResult item;
+            item.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
+            item.type = "relation";
+            item.content = ColumnText(stmt.get(), 1) + " " +
+                           ColumnText(stmt.get(), 2) + " " +
+                           ColumnText(stmt.get(), 3);
+            item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+            ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 5));
+            results.push_back(std::move(item));
+        }
+        if (rc != SQLITE_DONE) {
+            LogSqliteError(db_, "SearchLongTermMemory::fts_relations_step");
+            results.clear();
+            ftsFailed = true;
         }
     }
 
@@ -929,24 +1019,31 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                               "(topic LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\') "
                               "ORDER BY updated_at DESC, id DESC LIMIT ?;";
             SQLiteStatement stmt(db_, sql);
-            if (stmt) {
-                sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 2, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 3, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 5, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt.get(), 6, limit);
-                while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                    MemorySearchResult result;
-                    result.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
-                    result.type = "summary";
-                    result.content = ColumnText(stmt.get(), 1) + ": " +
-                                     ColumnText(stmt.get(), 2) + ": " +
-                                     ColumnText(stmt.get(), 3);
-                    result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
-                    ApplyFallbackScore(result);
-                    results.push_back(std::move(result));
-                }
+            if (!stmt) {
+                result.error = SqliteFailure(db_, "SearchLongTermMemory::like_summaries_prepare").error;
+                return result;
+            }
+            sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 2, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 3, request.sessionId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 5, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt.get(), 6, limit);
+            int rc = SQLITE_ROW;
+            while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+                MemorySearchResult item;
+                item.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
+                item.type = "summary";
+                item.content = ColumnText(stmt.get(), 1) + ": " +
+                               ColumnText(stmt.get(), 2) + ": " +
+                               ColumnText(stmt.get(), 3);
+                item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+                ApplyFallbackScore(item);
+                results.push_back(std::move(item));
+            }
+            if (rc != SQLITE_DONE) {
+                result.error = SqliteFailure(db_, "SearchLongTermMemory::like_summaries_step").error;
+                return result;
             }
         }
         {
@@ -955,25 +1052,32 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                               "(id LIKE ? ESCAPE '\\' OR type LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\' OR summary LIKE ? ESCAPE '\\') "
                               "ORDER BY updated_at DESC LIMIT ?;";
             SQLiteStatement stmt(db_, sql);
-            if (stmt) {
-                sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 2, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 3, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 5, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt.get(), 6, limit);
-                while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                    MemorySearchResult result;
-                    result.id = ColumnText(stmt.get(), 0);
-                    result.type = "entity";
-                    result.content = ColumnText(stmt.get(), 2) + ": " +
-                                     ColumnText(stmt.get(), 3) + ": " +
-                                     ColumnText(stmt.get(), 4);
-                    result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
-                    result.metadata = ParseJsonColumn(stmt.get(), 6);
-                    ApplyFallbackScore(result);
-                    results.push_back(std::move(result));
-                }
+            if (!stmt) {
+                result.error = SqliteFailure(db_, "SearchLongTermMemory::like_entities_prepare").error;
+                return result;
+            }
+            sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 2, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 3, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 5, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt.get(), 6, limit);
+            int rc = SQLITE_ROW;
+            while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+                MemorySearchResult item;
+                item.id = ColumnText(stmt.get(), 0);
+                item.type = "entity";
+                item.content = ColumnText(stmt.get(), 2) + ": " +
+                               ColumnText(stmt.get(), 3) + ": " +
+                               ColumnText(stmt.get(), 4);
+                item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
+                item.metadata = ParseJsonColumn(stmt.get(), 6);
+                ApplyFallbackScore(item);
+                results.push_back(std::move(item));
+            }
+            if (rc != SQLITE_DONE) {
+                result.error = SqliteFailure(db_, "SearchLongTermMemory::like_entities_step").error;
+                return result;
             }
         }
         {
@@ -982,37 +1086,47 @@ std::vector<MemorySearchResult> MemorySqliteStore::SearchLongTermMemory(const Me
                               "(from_entity LIKE ? ESCAPE '\\' OR relation LIKE ? ESCAPE '\\' OR to_entity LIKE ? ESCAPE '\\') "
                               "ORDER BY updated_at DESC, id DESC LIMIT ?;";
             SQLiteStatement stmt(db_, sql);
-            if (stmt) {
-                sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 2, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 3, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(stmt.get(), 5, limit);
-                while (sqlite3_step(stmt.get()) == SQLITE_ROW) {
-                    MemorySearchResult result;
-                    result.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
-                    result.type = "relation";
-                    result.content = ColumnText(stmt.get(), 2) + " " +
-                                     ColumnText(stmt.get(), 3) + " " +
-                                     ColumnText(stmt.get(), 4);
-                    result.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
-                    ApplyFallbackScore(result);
-                    results.push_back(std::move(result));
-                }
+            if (!stmt) {
+                result.error = SqliteFailure(db_, "SearchLongTermMemory::like_relations_prepare").error;
+                return result;
+            }
+            sqlite3_bind_text(stmt.get(), 1, request.agentId.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 2, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 3, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_text(stmt.get(), 4, pattern.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(stmt.get(), 5, limit);
+            int rc = SQLITE_ROW;
+            while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+                MemorySearchResult item;
+                item.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
+                item.type = "relation";
+                item.content = ColumnText(stmt.get(), 2) + " " +
+                               ColumnText(stmt.get(), 3) + " " +
+                               ColumnText(stmt.get(), 4);
+                item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
+                ApplyFallbackScore(item);
+                results.push_back(std::move(item));
+            }
+            if (rc != SQLITE_DONE) {
+                result.error = SqliteFailure(db_, "SearchLongTermMemory::like_relations_step").error;
+                return result;
             }
         }
     }
 
     SortAndLimitSearchResults(results, limit);
-    return results;
+    result.succeeded = true;
+    return result;
 }
 
-MemoryStats MemorySqliteStore::GetStoreStats() const
+MemoryStatsResult MemorySqliteStore::GetStoreStats() const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    MemoryStats stats;
+    MemoryStatsResult result;
+    auto& stats = result.stats;
     if (db_ == nullptr) {
-        return stats;
+        result.error = MemoryFailure("store_unavailable", "sqlite store is not initialized").error;
+        return result;
     }
 
     const char* queries[] = {
@@ -1032,12 +1146,21 @@ MemoryStats MemorySqliteStore::GetStoreStats() const
 
     for (int i = 0; i < 5; ++i) {
         SQLiteStatement stmt(db_, queries[i]);
-        if (stmt && sqlite3_step(stmt.get()) == SQLITE_ROW) {
+        if (!stmt) {
+            result.error = SqliteFailure(db_, "GetStoreStats::prepare").error;
+            return result;
+        }
+        int rc = sqlite3_step(stmt.get());
+        if (rc == SQLITE_ROW) {
             *fields[i] = sqlite3_column_int(stmt.get(), 0);
+        } else if (rc != SQLITE_DONE) {
+            result.error = SqliteFailure(db_, "GetStoreStats::step").error;
+            return result;
         }
     }
 
-    return stats;
+    result.succeeded = true;
+    return result;
 }
 
 bool MemorySqliteStore::IsValidTableName(const std::string& tableName) const

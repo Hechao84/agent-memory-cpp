@@ -76,13 +76,32 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
     }
 
     std::lock_guard<std::mutex> consolidationLock(impl.consolidationMutex);
-    std::string startCursor = request.forceReprocess ? std::string() : store->LoadConsolidationCursor(request.agentId, request.sessionId);
-    std::vector<MemoryEvent> events = store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor);
-    MemoryConsolidationResult result = consolidationService->Consolidate(request, events, model);
-    if (result.succeeded && store != nullptr && !result.nextCursor.empty() &&
-        !store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor)) {
-        result.succeeded = false;
-        result.error = {"cursor_save_failed", "failed to persist consolidation cursor", "", false};
+    std::string startCursor;
+    if (!request.forceReprocess) {
+        auto cursorResult = store->LoadConsolidationCursor(request.agentId, request.sessionId);
+        if (!cursorResult) {
+            MemoryConsolidationResult result;
+            result.error = cursorResult.error ? cursorResult.error
+                                              : MemoryError{"cursor_load_failed", "failed to load consolidation cursor", "", false};
+            return result;
+        }
+        startCursor = cursorResult.cursor;
+    }
+    auto eventsResult = store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor);
+    if (!eventsResult) {
+        MemoryConsolidationResult result;
+        result.error = eventsResult.error ? eventsResult.error
+                                          : MemoryError{"events_load_failed", "failed to load events for consolidation", "", false};
+        return result;
+    }
+    MemoryConsolidationResult result = consolidationService->Consolidate(request, eventsResult.events, model);
+    if (result.succeeded && store != nullptr && !result.nextCursor.empty()) {
+        auto cursorResult = store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor);
+        if (!cursorResult) {
+            result.succeeded = false;
+            result.error = cursorResult.error ? cursorResult.error
+                                              : MemoryError{"cursor_save_failed", "failed to persist consolidation cursor", "", false};
+        }
     }
     return result;
 }
@@ -101,8 +120,9 @@ MemoryOperationResult BuiltinMemoryRuntime::AppendEvent(const MemoryEvent& event
     if (store == nullptr) {
         return MemoryFailure("store_unavailable", StoreUnavailableMessage(*impl_));
     }
-    if (!store->SaveEvent(event)) {
-        return MemoryFailure("event_persist_failed", "failed to persist memory event");
+    auto result = store->SaveEvent(event);
+    if (!result) {
+        return result.error ? result : MemoryFailure("event_persist_failed", "failed to persist memory event");
     }
     return MemorySuccess();
 }
@@ -113,7 +133,7 @@ MemoryContextResult BuiltinMemoryRuntime::BuildContext(const MemoryContextReques
     if (contextBuilder == nullptr) {
         return {false, {}, {"context_build_failed", "context builder unavailable", "", false}};
     }
-    return {true, contextBuilder->BuildContext(request), {}};
+    return contextBuilder->BuildContext(request);
 }
 
 MemoryPayloadWriteResult BuiltinMemoryRuntime::WritePayload(const MemoryPayloadWriteRequest& request)
@@ -135,11 +155,7 @@ MemoryPayloadReadResult BuiltinMemoryRuntime::ReadPayload(const std::string& uri
     if (payloadService == nullptr) {
         return {false, std::string(), {"payload_read_failed", "payload service unavailable", "", false}};
     }
-    std::string content = payloadService->ReadPayload(uri);
-    if (content.empty()) {
-        return {false, std::string(), {"payload_read_failed", "payload not found or empty", "", false}};
-    }
-    return {true, content, {}};
+    return payloadService->ReadPayload(uri);
 }
 
 MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolidationRequest& request)
@@ -170,7 +186,8 @@ MemorySearchResponse BuiltinMemoryRuntime::SearchMemory(const MemorySearchReques
     if (store == nullptr) {
         return {false, {}, {"search_unavailable", StoreUnavailableMessage(*impl_), "", false}};
     }
-    return {true, store->SearchLongTermMemory(request), {}};
+    auto result = store->SearchLongTermMemory(request);
+    return {result.succeeded, result.results, result.error};
 }
 
 MemoryStatsResult BuiltinMemoryRuntime::GetStats() const
@@ -179,7 +196,7 @@ MemoryStatsResult BuiltinMemoryRuntime::GetStats() const
     if (store == nullptr) {
         return {false, {}, {"stats_unavailable", StoreUnavailableMessage(*impl_), "", false}};
     }
-    return {true, store->GetStoreStats(), {}};
+    return store->GetStoreStats();
 }
 
 } // namespace agent_memory

@@ -20,8 +20,13 @@ RuntimeStoreCreateResult CreateRuntimeStore(const MemoryConfig& config)
     }
 
     auto store = std::make_unique<MemorySqliteStore>(dbPath.string());
-    if (!store->Initialize()) {
-        return {nullptr, "failed to initialize sqlite memory store: " + dbPath.string()};
+    auto initializeResult = store->Initialize();
+    if (!initializeResult) {
+        std::string error = "failed to initialize sqlite memory store: " + dbPath.string();
+        if (!initializeResult.error.details.empty()) {
+            error += ": " + initializeResult.error.details;
+        }
+        return {nullptr, error};
     }
     return {std::move(store), ""};
 }

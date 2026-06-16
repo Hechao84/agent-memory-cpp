@@ -22,8 +22,8 @@ namespace {
 class FailingPayloadStore : public MemoryPayloadStore
 {
 public:
-    bool SavePayload(const MemoryPayloadRef&) override { return false; }
-    std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string&, const std::string&, int) const override { return {}; }
+    MemoryOperationResult SavePayload(const MemoryPayloadRef&) override { return MemoryFailure("payload_store_failed", "payload metadata failed", "forced failure"); }
+    MemoryPayloadRefsResult LoadRecentPayloads(const std::string&, const std::string&, int) const override { return {true, {}, {}}; }
 };
 
 class StaticModelClient : public ModelClient
@@ -168,7 +168,7 @@ int main()
     FailingPayloadStore failingStore;
     PayloadService failingPayloadService(failConfig, failConfig.dataPath, &failingStore);
     auto failedPayload = failingPayloadService.WritePayload(payloadRequest);
-    if (failedPayload || failedPayload.error.code != "payload_write_failed") {
+    if (failedPayload || failedPayload.error.code != "payload_store_failed" || failedPayload.error.details != "forced failure") {
         std::cerr << "payload metadata failure should fail write result\n";
         return 1;
     }

@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "agent_memory/error.h"
 #include "long_term_memory_processor.h"
 
 namespace agent_memory {
@@ -17,6 +18,7 @@ struct MemoryUpdateWriteResult
     int savedSummaries{0};
     int savedEntities{0};
     int savedRelations{0};
+    MemoryError error;
 };
 
 class MemoryUpdateWriter
@@ -24,7 +26,7 @@ class MemoryUpdateWriter
 public:
     explicit MemoryUpdateWriter(MemoryLongTermStore& store);
 
-    bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work);
+    MemoryOperationResult RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work);
     MemoryUpdateWriteResult SaveSessionSummary(MemoryStoreTransaction& transaction, const std::string& agentId,
                                                const std::string& sessionId, const std::string& summary,
                                                const std::vector<std::string>& sourceRefs);

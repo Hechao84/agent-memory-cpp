@@ -74,13 +74,13 @@ bool TestEventsAndCursors()
     }
 
     if (!store.SaveConsolidationCursor("agent-1", "", "42") ||
-        store.LoadConsolidationCursor("agent-1", "") != "42") {
+        store.LoadConsolidationCursor("agent-1", "").cursor != "42") {
         std::cerr << "cursor save/load failed\n";
         return false;
     }
 
     auto stats = store.GetStoreStats();
-    if (stats.events != 3) {
+    if (stats.stats.events != 3) {
         std::cerr << "event stats failed\n";
         return false;
     }
@@ -131,7 +131,7 @@ bool TestPayloads()
     }
 
     auto stats = store.GetStoreStats();
-    if (stats.payloads != 2) {
+    if (stats.stats.payloads != 2) {
         std::cerr << "payload stats failed\n";
         return false;
     }
@@ -184,7 +184,7 @@ bool TestLongTermMemoryAndSearch()
     }
 
     auto snapshot = store.LoadLongTermMemory("agent-1", 10, "session-1");
-    if (snapshot.summaries.size() != 1 || snapshot.entities.size() != 2 || snapshot.relations.size() != 1) {
+    if (snapshot.snapshot.summaries.size() != 1 || snapshot.snapshot.entities.size() != 2 || snapshot.snapshot.relations.size() != 1) {
         std::cerr << "long-term snapshot failed\n";
         return false;
     }
@@ -228,7 +228,7 @@ bool TestLongTermMemoryAndSearch()
         return false;
     }
     auto dedupSnapshot = store.LoadLongTermMemory("agent-1", 10, "session-1");
-    for (const auto& activeEntity : dedupSnapshot.entities) {
+    for (const auto& activeEntity : dedupSnapshot.snapshot.entities) {
         if (activeEntity.id == entity.id) {
             std::cerr << "duplicate entity should be obsolete\n";
             return false;
@@ -248,7 +248,7 @@ bool TestLongTermMemoryAndSearch()
     }
     auto conflictSnapshot = store.LoadLongTermMemory("agent-1", 10, "session-1");
     bool foundConflict = false;
-    for (const auto& activeRelation : conflictSnapshot.relations) {
+    for (const auto& activeRelation : conflictSnapshot.snapshot.relations) {
         if (activeRelation.relationType == "contradicts" && activeRelation.metadata.value("conflict", false)) {
             foundConflict = true;
         }
@@ -263,7 +263,7 @@ bool TestLongTermMemoryAndSearch()
         return false;
     }
     auto activeSnapshot = store.LoadLongTermMemory("agent-1", 10, "session-1");
-    for (const auto& activeEntity : activeSnapshot.entities) {
+    for (const auto& activeEntity : activeSnapshot.snapshot.entities) {
         if (activeEntity.id == oldEntity.id) {
             std::cerr << "obsolete entity should not be active\n";
             return false;
@@ -271,7 +271,7 @@ bool TestLongTermMemoryAndSearch()
     }
 
     auto stats = store.GetStoreStats();
-    if (stats.summaries != 1 || stats.entities != 3 || stats.relations != 2) {
+    if (stats.stats.summaries != 1 || stats.stats.entities != 3 || stats.stats.relations != 2) {
         std::cerr << "long-term stats failed\n";
         return false;
     }
@@ -328,17 +328,17 @@ bool TestWriterTransactionRollback()
     entity.name = "fail topic";
     update.entities.push_back(entity);
 
-    bool ok = writer.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+    auto ok = writer.RunInTransaction([&](MemoryStoreTransaction& transaction) {
         sessionWrite = writer.SaveSessionSummary(transaction, "agent-1", "session-1", "session summary", {"event://1"});
         updateWrite = writer.SaveUpdate(transaction, "agent-1", "session-1", update, {"event://1"});
-        return false;
+        return MemoryFailure("requested_rollback", "requested rollback");
     });
     if (ok || !sessionWrite.succeeded || !updateWrite.succeeded) {
         std::cerr << "writer transaction should roll back requested failure\n";
         return false;
     }
     auto stats = store.GetStoreStats();
-    if (stats.summaries != 0 || stats.entities != 0) {
+    if (stats.stats.summaries != 0 || stats.stats.entities != 0) {
         std::cerr << "writer transaction should roll back partial writes\n";
         return false;
     }
@@ -349,12 +349,27 @@ bool TestUninitializedTransactionDoesNotInitialize()
 {
     MemorySqliteStore store(TempDbPath("uninitialized-transaction.db").string());
     bool called = false;
-    bool ok = store.RunInTransaction([&](MemoryStoreTransaction&) {
+    auto ok = store.RunInTransaction([&](MemoryStoreTransaction&) {
         called = true;
-        return true;
+        return MemorySuccess();
     });
     if (ok || called) {
         std::cerr << "uninitialized transaction should fail without invoking work\n";
+        return false;
+    }
+    MemorySearchRequest search;
+    search.agentId = "agent-1";
+    search.sessionId = "session-1";
+    search.query = "query";
+    search.limit = 10;
+    if (store.LoadRecentEvents("agent-1", "session-1", 10) || store.LoadRecentPayloads("agent-1", "session-1", 10) ||
+        store.LoadConsolidationCursor("agent-1", "session-1") || store.LoadLongTermMemory("agent-1", 10) ||
+        store.SearchLongTermMemory(search) || store.GetStoreStats()) {
+        std::cerr << "uninitialized read methods should fail\n";
+        return false;
+    }
+    if (store.GetStoreStats().error.code != "store_unavailable") {
+        std::cerr << "uninitialized read should expose structured error\n";
         return false;
     }
     return true;
@@ -368,19 +383,19 @@ bool TestTransactions()
         return false;
     }
 
-    bool ok = store.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+    auto ok = store.RunInTransaction([&](MemoryStoreTransaction& transaction) {
         return transaction.SaveSummary("agent-1", "session-1", "session", "conversation", "inside transaction", 0.5F);
     });
-    if (!ok || store.GetStoreStats().summaries != 1) {
+    if (!ok || store.GetStoreStats().stats.summaries != 1) {
         std::cerr << "transaction commit failed\n";
         return false;
     }
 
-    bool failed = store.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+    auto failed = store.RunInTransaction([&](MemoryStoreTransaction& transaction) {
         transaction.SaveSummary("agent-1", "session-1", "session", "conversation", "rolled back", 0.5F);
-        return false;
+        return MemoryFailure("requested_rollback", "requested rollback");
     });
-    if (failed || store.GetStoreStats().summaries != 1) {
+    if (failed || store.GetStoreStats().stats.summaries != 1) {
         std::cerr << "transaction rollback failed\n";
         return false;
     }

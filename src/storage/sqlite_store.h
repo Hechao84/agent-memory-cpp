@@ -22,27 +22,27 @@ public:
     MemorySqliteStore(MemorySqliteStore&&) = delete;
     MemorySqliteStore& operator=(MemorySqliteStore&&) = delete;
 
-    bool Initialize() override;
-    bool SaveEvent(const MemoryEvent& event) override;
-    bool SavePayload(const MemoryPayloadRef& payload) override;
-    std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const override;
-    bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
-                     const std::string& topic, const std::string& summary, float confidence,
-                     const std::vector<std::string>& sourceRefs = {}) override;
-    bool SaveEntity(const MemoryEntity& entity) override;
-    bool SaveRelation(const MemoryRelation& relation) override;
-    bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work) override;
-    bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) override;
-    std::string LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override;
-    bool SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override;
-    std::vector<MemoryEvent> LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
-                                                    const std::string& cursor) const override;
-    std::vector<MemoryEvent> LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
-                                              int limit) const override;
-    LongTermMemorySnapshot LoadLongTermMemory(const std::string& agentId, int limit,
-                                               const std::string& sessionId = {}) const override;
-    std::vector<MemorySearchResult> SearchLongTermMemory(const MemorySearchRequest& request) const override;
-    MemoryStats GetStoreStats() const override;
+    MemoryOperationResult Initialize() override;
+    MemoryOperationResult SaveEvent(const MemoryEvent& event) override;
+    MemoryOperationResult SavePayload(const MemoryPayloadRef& payload) override;
+    MemoryPayloadRefsResult LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const override;
+    MemoryOperationResult SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
+                                      const std::string& topic, const std::string& summary, float confidence,
+                                      const std::vector<std::string>& sourceRefs = {}) override;
+    MemoryOperationResult SaveEntity(const MemoryEntity& entity) override;
+    MemoryOperationResult SaveRelation(const MemoryRelation& relation) override;
+    MemoryOperationResult RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work) override;
+    MemoryOperationResult MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) override;
+    ConsolidationCursorResult LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override;
+    MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override;
+    MemoryEventsResult LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
+                                             const std::string& cursor) const override;
+    MemoryEventsResult LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
+                                        int limit) const override;
+    LongTermMemorySnapshotResult LoadLongTermMemory(const std::string& agentId, int limit,
+                                                    const std::string& sessionId = {}) const override;
+    MemorySearchStoreResult SearchLongTermMemory(const MemorySearchRequest& request) const override;
+    MemoryStatsResult GetStoreStats() const override;
 
 private:
     friend class SqliteStoreTransaction;

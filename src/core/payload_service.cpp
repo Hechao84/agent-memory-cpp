@@ -1,6 +1,5 @@
 #include "payload_service.h"
 
-#include <atomic>
 #include <chrono>
 #include <cctype>
 #include <filesystem>
@@ -31,12 +30,6 @@ std::string RandomHexSuffix()
     return suffix.str();
 }
 
-std::atomic_bool& TempCleanupRunning()
-{
-    static std::atomic_bool running{false};
-    return running;
-}
-
 bool IsExpired(const fs::directory_entry& entry, std::chrono::hours ttl)
 {
     std::error_code error;
@@ -54,14 +47,12 @@ PayloadService::PayloadService(const MemoryConfig& config, std::string dataPath,
 {
     canonicalPayloadDirectory_ = CanonicalPath(PayloadDirectory());
     if (canonicalPayloadDirectory_.empty()) {
-        SetLastError("failed to canonicalize payload directory path");
     }
 }
 
 MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRequest& request)
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    ClearLastError();
     MemoryPayloadWriteResult result;
     result.succeeded = true;
     if (!config_.enablePayloadOffload || request.content.empty()) {
@@ -91,41 +82,40 @@ MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRe
     result.payload.toolName = request.toolName;
     result.payload.originalChars = static_cast<int>(request.content.size());
     result.replacementContent = "[memory-ref: " + result.payload.uri + "]\n" + result.payload.summary;
-    if (store_ != nullptr && !store_->SavePayload(result.payload)) {
-        std::error_code removeError;
-        fs::remove(payloadPath, removeError);
-        SetLastError("failed to persist payload metadata");
-        result.succeeded = false;
-        result.offloaded = false;
-        result.error = {"payload_write_failed", "failed to persist payload metadata", "", false};
-        result.replacementContent = request.content;
+    if (store_ != nullptr) {
+        auto saveResult = store_->SavePayload(result.payload);
+        if (!saveResult) {
+            std::error_code removeError;
+            fs::remove(payloadPath, removeError);
+            result.succeeded = false;
+            result.offloaded = false;
+            result.error = saveResult.error ? saveResult.error
+                                            : MemoryError{"payload_write_failed", "failed to persist payload metadata", "", false};
+            result.replacementContent = request.content;
+        }
     }
     return result;
 }
 
-std::string PayloadService::ReadPayload(const std::string& ref) const
+MemoryPayloadReadResult PayloadService::ReadPayload(const std::string& ref) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
-    ClearLastError();
     if (ref.rfind("file://", 0) != 0) {
-        SetLastError("unsupported payload ref scheme");
-        return "";
+        return {false, {}, {"payload_read_failed", "unsupported payload ref scheme", "", false}};
     }
 
     std::string payloadPath = ref.substr(7);
     if (canonicalPayloadDirectory_.empty()) {
-        SetLastError("payload directory path is not resolved");
-        return "";
+        return {false, {}, {"payload_read_failed", "payload directory path is not resolved", "", false}};
     }
     if (!IsPathInsideDirectory(payloadPath, canonicalPayloadDirectory_)) {
-        SetLastError("payload path outside configured payload directory");
-        return "";
+        return {false, {}, {"payload_read_failed", "payload path outside configured payload directory", "", false}};
     }
     std::string content = LoadTextFile(CanonicalPath(payloadPath), true).value_or("");
     if (content.empty()) {
-        SetLastError("payload file is empty or unreadable");
+        return {false, {}, {"payload_read_failed", "payload file is empty or unreadable", "", false}};
     }
-    return content;
+    return {true, content, {}};
 }
 
 std::string PayloadService::BuildPayloadRef(const MemoryPayloadWriteRequest& request) const
@@ -162,14 +152,12 @@ bool PayloadService::WritePayloadFileAtomically(const std::filesystem::path& pay
     std::error_code error;
     fs::create_directories(payloadPath.parent_path(), error);
     if (error) {
-        SetLastError("failed to create payload directory: " + error.message());
         result.succeeded = false;
         result.error = {"payload_write_failed", "failed to create payload directory", error.message(), false};
         return false;
     }
 
     if (fs::exists(payloadPath, error)) {
-        SetLastError("payload file already exists");
         result.succeeded = false;
         result.error = {"payload_write_failed", "payload file already exists", "", false};
         return false;
@@ -178,7 +166,6 @@ bool PayloadService::WritePayloadFileAtomically(const std::filesystem::path& pay
     fs::path tempPath = payloadPath;
     tempPath += ".tmp." + RandomHexSuffix();
     if (fs::exists(tempPath, error)) {
-        SetLastError("payload temp file already exists");
         result.succeeded = false;
         result.error = {"payload_write_failed", "payload temp file already exists", "", false};
         return false;
@@ -186,7 +173,6 @@ bool PayloadService::WritePayloadFileAtomically(const std::filesystem::path& pay
 
     std::ofstream file(tempPath, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) {
-        SetLastError("failed to open payload temp file for write");
         result.succeeded = false;
         result.error = {"payload_write_failed", "failed to open payload temp file for write", "", false};
         return false;
@@ -196,7 +182,6 @@ bool PayloadService::WritePayloadFileAtomically(const std::filesystem::path& pay
     if (!file) {
         std::error_code removeError;
         fs::remove(tempPath, removeError);
-        SetLastError("failed to write payload temp file");
         result.succeeded = false;
         result.error = {"payload_write_failed", "failed to write payload temp file", "", false};
         return false;
@@ -206,7 +191,6 @@ bool PayloadService::WritePayloadFileAtomically(const std::filesystem::path& pay
     if (error) {
         std::error_code removeError;
         fs::remove(tempPath, removeError);
-        SetLastError("failed to finalize payload file: " + error.message());
         result.succeeded = false;
         result.error = {"payload_write_failed", "failed to finalize payload file", error.message(), false};
         return false;
@@ -216,10 +200,6 @@ bool PayloadService::WritePayloadFileAtomically(const std::filesystem::path& pay
 
 void PayloadService::ScheduleTempFileCleanup() const
 {
-    bool expected = false;
-    if (!TempCleanupRunning().compare_exchange_strong(expected, true)) {
-        return;
-    }
     fs::path directory = PayloadDirectory();
     std::thread([directory]() {
         std::error_code error;
@@ -238,29 +218,12 @@ void PayloadService::ScheduleTempFileCleanup() const
                 fs::remove(entry.path(), removeError);
             }
         }
-        TempCleanupRunning() = false;
     }).detach();
 }
 
 std::string PayloadService::PayloadDirectory() const
 {
     return (fs::path(dataPath_) / "memory_runtime" / "payloads").string();
-}
-
-std::string PayloadService::LastError() const
-{
-    std::lock_guard<std::recursive_mutex> lock(mutex_);
-    return lastError_;
-}
-
-void PayloadService::SetLastError(const std::string& error) const
-{
-    lastError_ = error;
-}
-
-void PayloadService::ClearLastError() const
-{
-    lastError_.clear();
 }
 
 } // namespace agent_memory

@@ -6,6 +6,7 @@
 
 #include "agent_memory/config.h"
 #include "agent_memory/context.h"
+#include "store.h"
 
 namespace agent_memory {
 
@@ -20,11 +21,11 @@ public:
     ContextBuilder(const MemoryConfig& config, MemoryEventStore* eventStore, MemoryPayloadStore* payloadStore,
                    MemoryLongTermStore* longTermStore, MemorySearchStore* searchStore);
 
-    MemoryContextPackage BuildContext(const MemoryContextRequest& request) const;
+    MemoryContextResult BuildContext(const MemoryContextRequest& request) const;
 
 private:
-    std::vector<MemoryMessage> LoadMessagesForContext(const MemoryContextRequest& request) const;
-    std::vector<MemoryPayloadRef> LoadPayloadsForContext(const MemoryContextRequest& request) const;
+    MemoryEventsResult LoadMessagesForContext(const MemoryContextRequest& request) const;
+    MemoryPayloadRefsResult LoadPayloadsForContext(const MemoryContextRequest& request) const;
     bool ShouldInclude(const MemoryContextRequest& request, std::string_view section) const;
     int LongTermMemoryLimit(const MemoryContextRequest& request) const;
 

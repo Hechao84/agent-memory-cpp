@@ -4,11 +4,13 @@
 #include <string>
 #include <vector>
 
+#include "agent_memory/error.h"
 #include "agent_memory/event.h"
 #include "agent_memory/long_term_memory.h"
 #include "agent_memory/payload.h"
 #include "agent_memory/search.h"
 #include "agent_memory/stats.h"
+
 
 namespace agent_memory {
 
@@ -19,6 +21,8 @@ struct LongTermSummaryRecord
     std::string summary;
     float confidence{0.0F};
     std::vector<std::string> sourceRefs;
+    std::string createdAt;
+    std::string updatedAt;
 };
 
 struct LongTermMemorySnapshot
@@ -28,17 +32,75 @@ struct LongTermMemorySnapshot
     std::vector<MemoryRelation> relations;
 };
 
+struct MemoryEventsResult
+{
+    bool succeeded{false};
+    std::vector<MemoryEvent> events;
+    MemoryError error;
+
+    explicit operator bool() const { return succeeded; }
+    size_t size() const { return events.size(); }
+    const MemoryEvent& operator[](size_t index) const { return events[index]; }
+    std::vector<MemoryEvent>::const_iterator begin() const { return events.begin(); }
+    std::vector<MemoryEvent>::const_iterator end() const { return events.end(); }
+};
+
+struct MemoryPayloadRefsResult
+{
+    bool succeeded{false};
+    std::vector<MemoryPayloadRef> payloads;
+    MemoryError error;
+
+    explicit operator bool() const { return succeeded; }
+    size_t size() const { return payloads.size(); }
+    const MemoryPayloadRef& operator[](size_t index) const { return payloads[index]; }
+    std::vector<MemoryPayloadRef>::const_iterator begin() const { return payloads.begin(); }
+    std::vector<MemoryPayloadRef>::const_iterator end() const { return payloads.end(); }
+};
+
+struct LongTermMemorySnapshotResult
+{
+    bool succeeded{false};
+    LongTermMemorySnapshot snapshot;
+    MemoryError error;
+
+    explicit operator bool() const { return succeeded; }
+};
+
+struct MemorySearchStoreResult
+{
+    bool succeeded{false};
+    std::vector<MemorySearchResult> results;
+    MemoryError error;
+
+    explicit operator bool() const { return succeeded; }
+    size_t size() const { return results.size(); }
+    const MemorySearchResult& operator[](size_t index) const { return results[index]; }
+    std::vector<MemorySearchResult>::const_iterator begin() const { return results.begin(); }
+    std::vector<MemorySearchResult>::const_iterator end() const { return results.end(); }
+};
+
+struct ConsolidationCursorResult
+{
+    bool succeeded{false};
+    std::string cursor;
+    MemoryError error;
+
+    explicit operator bool() const { return succeeded; }
+};
+
 class MemoryStoreTransaction
+
 {
 public:
     virtual ~MemoryStoreTransaction() = default;
 
-    virtual bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
-                             const std::string& topic, const std::string& summary, float confidence,
-                             const std::vector<std::string>& sourceRefs = {}) = 0;
-    virtual bool SaveEntity(const MemoryEntity& entity) = 0;
-    virtual bool SaveRelation(const MemoryRelation& relation) = 0;
-    virtual bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) = 0;
+    virtual MemoryOperationResult SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
+                                              const std::string& topic, const std::string& summary, float confidence,
+                                              const std::vector<std::string>& sourceRefs = {}) = 0;
+    virtual MemoryOperationResult SaveEntity(const MemoryEntity& entity) = 0;
+    virtual MemoryOperationResult SaveRelation(const MemoryRelation& relation) = 0;
+    virtual MemoryOperationResult MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) = 0;
 };
 
 class MemoryEventStore
@@ -46,11 +108,11 @@ class MemoryEventStore
 public:
     virtual ~MemoryEventStore() = default;
 
-    virtual bool SaveEvent(const MemoryEvent& event) = 0;
-    virtual std::vector<MemoryEvent> LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
-                                                           const std::string& cursor) const = 0;
-    virtual std::vector<MemoryEvent> LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
-                                                      int limit) const = 0;
+    virtual MemoryOperationResult SaveEvent(const MemoryEvent& event) = 0;
+    virtual MemoryEventsResult LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
+                                                     const std::string& cursor) const = 0;
+    virtual MemoryEventsResult LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
+                                                int limit) const = 0;
 };
 
 class MemoryPayloadStore
@@ -58,9 +120,9 @@ class MemoryPayloadStore
 public:
     virtual ~MemoryPayloadStore() = default;
 
-    virtual bool SavePayload(const MemoryPayloadRef& payload) = 0;
-    virtual std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string& agentId, const std::string& sessionId,
-                                                             int limit) const = 0;
+    virtual MemoryOperationResult SavePayload(const MemoryPayloadRef& payload) = 0;
+    virtual MemoryPayloadRefsResult LoadRecentPayloads(const std::string& agentId, const std::string& sessionId,
+                                                       int limit) const = 0;
 };
 
 class MemoryLongTermStore
@@ -68,18 +130,18 @@ class MemoryLongTermStore
 public:
     virtual ~MemoryLongTermStore() = default;
 
-    virtual bool SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
-                             const std::string& topic, const std::string& summary, float confidence,
-                             const std::vector<std::string>& sourceRefs = {}) = 0;
-    virtual bool SaveEntity(const MemoryEntity& entity) = 0;
-    virtual bool SaveRelation(const MemoryRelation& relation) = 0;
-    virtual bool MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) = 0;
-    virtual bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work) = 0;
-    virtual std::string LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const = 0;
-    virtual bool SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId,
-                                         const std::string& cursor) = 0;
-    virtual LongTermMemorySnapshot LoadLongTermMemory(const std::string& agentId, int limit,
-                                                      const std::string& sessionId = {}) const = 0;
+    virtual MemoryOperationResult SaveSummary(const std::string& agentId, const std::string& sessionId, const std::string& level,
+                                              const std::string& topic, const std::string& summary, float confidence,
+                                              const std::vector<std::string>& sourceRefs = {}) = 0;
+    virtual MemoryOperationResult SaveEntity(const MemoryEntity& entity) = 0;
+    virtual MemoryOperationResult SaveRelation(const MemoryRelation& relation) = 0;
+    virtual MemoryOperationResult MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) = 0;
+    virtual MemoryOperationResult RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work) = 0;
+    virtual ConsolidationCursorResult LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const = 0;
+    virtual MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId,
+                                                          const std::string& cursor) = 0;
+    virtual LongTermMemorySnapshotResult LoadLongTermMemory(const std::string& agentId, int limit,
+                                                            const std::string& sessionId = {}) const = 0;
 };
 
 class MemorySearchStore
@@ -87,7 +149,7 @@ class MemorySearchStore
 public:
     virtual ~MemorySearchStore() = default;
 
-    virtual std::vector<MemorySearchResult> SearchLongTermMemory(const MemorySearchRequest& request) const = 0;
+    virtual MemorySearchStoreResult SearchLongTermMemory(const MemorySearchRequest& request) const = 0;
 };
 
 class MemoryStatsStore
@@ -95,7 +157,7 @@ class MemoryStatsStore
 public:
     virtual ~MemoryStatsStore() = default;
 
-    virtual MemoryStats GetStoreStats() const = 0;
+    virtual MemoryStatsResult GetStoreStats() const = 0;
 };
 
 class MemoryStore : public MemoryEventStore,
@@ -107,7 +169,7 @@ class MemoryStore : public MemoryEventStore,
 public:
     ~MemoryStore() override = default;
 
-    virtual bool Initialize() = 0;
+    virtual MemoryOperationResult Initialize() = 0;
 };
 
 } // namespace agent_memory

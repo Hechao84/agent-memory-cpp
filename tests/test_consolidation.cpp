@@ -20,50 +20,53 @@ namespace {
 class InMemoryStore : public MemoryStore, public MemoryStoreTransaction
 {
 public:
-    bool Initialize() override { return true; }
-    bool SaveEvent(const MemoryEvent& event) override
+    MemoryOperationResult Initialize() override { return MemorySuccess(); }
+    MemoryOperationResult SaveEvent(const MemoryEvent& event) override
     {
         events.push_back(event);
-        return true;
+        return MemorySuccess();
     }
-    bool SavePayload(const MemoryPayloadRef& payload) override
+    MemoryOperationResult SavePayload(const MemoryPayloadRef& payload) override
     {
         payloads.push_back(payload);
-        return true;
+        return MemorySuccess();
     }
-    bool SaveSummary(const std::string&, const std::string&, const std::string& level, const std::string&,
-                     const std::string& summary, float, const std::vector<std::string>&) override
+    MemoryOperationResult SaveSummary(const std::string&, const std::string&, const std::string& level, const std::string&,
+                                      const std::string& summary, float, const std::vector<std::string>&) override
     {
         summaryLevels.push_back(level);
         summaries.push_back(summary);
-        return true;
+        return MemorySuccess();
     }
-    bool SaveEntity(const MemoryEntity& entity) override
+    MemoryOperationResult SaveEntity(const MemoryEntity& entity) override
     {
         entities.push_back(entity);
-        return !failEntitySave;
+        return failEntitySave ? MemoryFailure("entity_save_failed", "entity save failed", "forced failure") : MemorySuccess();
     }
-    bool SaveRelation(const MemoryRelation& relation) override
+    MemoryOperationResult SaveRelation(const MemoryRelation& relation) override
     {
         relations.push_back(relation);
-        return true;
+        return MemorySuccess();
     }
-    bool MarkEntityObsolete(const std::string&, const std::string&) override { return true; }
-    bool RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work) override { return work(*this); }
-    std::string LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override
+    MemoryOperationResult MarkEntityObsolete(const std::string&, const std::string&) override { return MemorySuccess(); }
+    MemoryOperationResult RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work) override { return work(*this); }
+    ConsolidationCursorResult LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override
     {
+        ConsolidationCursorResult result;
         auto it = cursors.find(agentId + ":" + sessionId);
-        return it == cursors.end() ? std::string() : it->second;
+        result.cursor = it == cursors.end() ? std::string() : it->second;
+        result.succeeded = true;
+        return result;
     }
-    bool SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override
+    MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override
     {
         cursors[agentId + ":" + sessionId] = cursor;
-        return true;
+        return MemorySuccess();
     }
-    std::vector<MemoryEvent> LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
-                                                    const std::string& cursor) const override
+    MemoryEventsResult LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
+                                             const std::string& cursor) const override
     {
-        std::vector<MemoryEvent> result;
+        MemoryEventsResult result;
         size_t start = cursor.empty() ? 0 : static_cast<size_t>(std::stoi(cursor));
         for (size_t i = start; i < events.size(); ++i) {
             if (!agentId.empty() && events[i].agentId != agentId) {
@@ -74,14 +77,15 @@ public:
             }
             MemoryEvent event = events[i];
             event.storeCursor = std::to_string(i + 1);
-            result.push_back(event);
+            result.events.push_back(event);
         }
+        result.succeeded = true;
         return result;
     }
-    std::vector<MemoryEvent> LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
+    MemoryEventsResult LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
                                               int limit) const override
     {
-        std::vector<MemoryEvent> result;
+        MemoryEventsResult result;
         for (const auto& event : events) {
             if (!agentId.empty() && event.agentId != agentId) {
                 continue;
@@ -89,30 +93,32 @@ public:
             if (!sessionId.empty() && event.sessionId != sessionId) {
                 continue;
             }
-            result.push_back(event);
+            result.events.push_back(event);
         }
-        if (limit > 0 && static_cast<int>(result.size()) > limit) {
-            return std::vector<MemoryEvent>(result.end() - limit, result.end());
+        if (limit > 0 && static_cast<int>(result.events.size()) > limit) {
+            result.events = std::vector<MemoryEvent>(result.events.end() - limit, result.events.end());
         }
+        result.succeeded = true;
         return result;
     }
-    LongTermMemorySnapshot LoadLongTermMemory(const std::string&, int, const std::string&) const override { return {}; }
-    std::vector<MemoryPayloadRef> LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const override
+    LongTermMemorySnapshotResult LoadLongTermMemory(const std::string&, int, const std::string&) const override { return {true, {}, {}}; }
+    MemoryPayloadRefsResult LoadRecentPayloads(const std::string& agentId, const std::string& sessionId, int limit) const override
     {
-        std::vector<MemoryPayloadRef> result;
+        MemoryPayloadRefsResult result;
         for (const auto& payload : payloads) {
             if (payload.agentId != agentId || (!sessionId.empty() && payload.sessionId != sessionId)) {
                 continue;
             }
-            result.push_back(payload);
+            result.payloads.push_back(payload);
         }
-        if (limit <= 0 || static_cast<int>(result.size()) <= limit) {
-            return result;
+        if (limit > 0 && static_cast<int>(result.payloads.size()) > limit) {
+            result.payloads = std::vector<MemoryPayloadRef>(result.payloads.end() - limit, result.payloads.end());
         }
-        return std::vector<MemoryPayloadRef>(result.end() - limit, result.end());
+        result.succeeded = true;
+        return result;
     }
-    std::vector<MemorySearchResult> SearchLongTermMemory(const MemorySearchRequest&) const override { return {}; }
-    MemoryStats GetStoreStats() const override
+    MemorySearchStoreResult SearchLongTermMemory(const MemorySearchRequest&) const override { return {true, {}, {}}; }
+    MemoryStatsResult GetStoreStats() const override
     {
         MemoryStats stats;
         stats.events = static_cast<int>(events.size());
@@ -120,7 +126,7 @@ public:
         stats.summaries = static_cast<int>(summaries.size());
         stats.entities = static_cast<int>(entities.size());
         stats.relations = static_cast<int>(relations.size());
-        return stats;
+        return {true, stats, {}};
     }
 
     std::vector<MemoryEvent> events;
@@ -287,7 +293,8 @@ bool TestMemoryUpdateWriterFailureStopsUpdate()
     update.relations.push_back(relation);
 
     auto write = writer.SaveUpdate(store, "agent-1", "session-1", update, {"session://session-1#event:1"});
-    if (write.succeeded || write.savedEntities != 0 || write.savedRelations != 0) {
+    if (write.succeeded || write.savedEntities != 0 || write.savedRelations != 0 ||
+        write.error.code != "entity_save_failed" || write.error.details != "forced failure") {
         std::cerr << "writer should fail without reporting partial saves\n";
         return false;
     }

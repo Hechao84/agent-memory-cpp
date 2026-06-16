@@ -6,10 +6,11 @@ namespace agent_memory {
 
 namespace {
 
-MemoryUpdateWriteResult FailedWrite()
+MemoryUpdateWriteResult FailedWrite(const MemoryOperationResult& operation)
 {
     MemoryUpdateWriteResult result;
     result.succeeded = false;
+    result.error = operation.error;
     return result;
 }
 
@@ -20,7 +21,7 @@ MemoryUpdateWriter::MemoryUpdateWriter(MemoryLongTermStore& store)
 {
 }
 
-bool MemoryUpdateWriter::RunInTransaction(const std::function<bool(MemoryStoreTransaction& transaction)>& work)
+MemoryOperationResult MemoryUpdateWriter::RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work)
 {
     return store_.RunInTransaction(work);
 }
@@ -30,8 +31,9 @@ MemoryUpdateWriteResult MemoryUpdateWriter::SaveSessionSummary(MemoryStoreTransa
                                                                const std::vector<std::string>& sourceRefs)
 {
     MemoryUpdateWriteResult result;
-    if (!transaction.SaveSummary(agentId, sessionId, "session", "conversation", summary, 0.5F, sourceRefs)) {
-        return FailedWrite();
+    auto operation = transaction.SaveSummary(agentId, sessionId, "session", "conversation", summary, 0.5F, sourceRefs);
+    if (!operation) {
+        return FailedWrite(operation);
     }
     result.savedSummaries = 1;
     return result;
@@ -43,14 +45,16 @@ MemoryUpdateWriteResult MemoryUpdateWriter::SaveUpdate(MemoryStoreTransaction& t
 {
     MemoryUpdateWriteResult result;
     for (const auto& topicSummary : update.topicSummaries) {
-        if (!transaction.SaveSummary(agentId, sessionId, "topic", "auto", topicSummary, 0.5F, sourceRefs)) {
-            return FailedWrite();
+        auto operation = transaction.SaveSummary(agentId, sessionId, "topic", "auto", topicSummary, 0.5F, sourceRefs);
+        if (!operation) {
+            return FailedWrite(operation);
         }
         ++result.savedSummaries;
     }
     for (const auto& profileSummary : update.profileSummaries) {
-        if (!transaction.SaveSummary(agentId, sessionId, "profile", "user", profileSummary, 0.6F, sourceRefs)) {
-            return FailedWrite();
+        auto operation = transaction.SaveSummary(agentId, sessionId, "profile", "user", profileSummary, 0.6F, sourceRefs);
+        if (!operation) {
+            return FailedWrite(operation);
         }
         ++result.savedSummaries;
     }
@@ -59,12 +63,16 @@ MemoryUpdateWriteResult MemoryUpdateWriter::SaveUpdate(MemoryStoreTransaction& t
         if (e.agentId.empty()) {
             e.agentId = agentId;
         }
-        if (!transaction.SaveEntity(e)) {
-            return FailedWrite();
+        auto operation = transaction.SaveEntity(e);
+        if (!operation) {
+            return FailedWrite(operation);
         }
         ++result.savedEntities;
-        if (!e.supersededEntityId.empty() && !transaction.MarkEntityObsolete(e.supersededEntityId, e.id)) {
-            return FailedWrite();
+        if (!e.supersededEntityId.empty()) {
+            auto operation = transaction.MarkEntityObsolete(e.supersededEntityId, e.id);
+            if (!operation) {
+                return FailedWrite(operation);
+            }
         }
     }
     for (const auto& relation : update.relations) {
@@ -72,8 +80,9 @@ MemoryUpdateWriteResult MemoryUpdateWriter::SaveUpdate(MemoryStoreTransaction& t
         if (r.agentId.empty()) {
             r.agentId = agentId;
         }
-        if (!transaction.SaveRelation(r)) {
-            return FailedWrite();
+        auto operation = transaction.SaveRelation(r);
+        if (!operation) {
+            return FailedWrite(operation);
         }
         ++result.savedRelations;
     }

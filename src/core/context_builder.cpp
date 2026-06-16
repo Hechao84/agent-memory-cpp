@@ -35,9 +35,11 @@ bool RelationIdMatches(const MemoryRelation& relation, const std::string& result
 
 struct SelectedLongTermMemory
 {
+    bool succeeded{true};
     LongTermMemorySnapshot snapshot;
     std::vector<MemorySearchResult> searchResults;
     bool usedSearch{false};
+    MemoryError error;
 };
 
 std::string FormatLongTermSnapshot(const LongTermMemorySnapshot& snapshot)
@@ -118,11 +120,23 @@ ContextBuilder::ContextBuilder(const MemoryConfig& config, MemoryEventStore* eve
 {
 }
 
-MemoryContextPackage ContextBuilder::BuildContext(const MemoryContextRequest& request) const
+MemoryContextResult ContextBuilder::BuildContext(const MemoryContextRequest& request) const
 {
     MemoryContextPackage result;
     if (ShouldInclude(request, context_sections::Messages)) {
-        result.messages = LoadMessagesForContext(request);
+        auto messages = LoadMessagesForContext(request);
+        if (!messages) {
+            return {false, {}, messages.error};
+        }
+        for (const auto& event : messages.events) {
+            MemoryMessage message;
+            message.role = event.role;
+            message.content = event.content;
+            message.toolCallId = event.toolCallId;
+            message.toolName = event.toolName;
+            message.payloadRef = event.payloadRef;
+            result.messages.push_back(std::move(message));
+        }
     }
     result.metadata["message_count"] = result.messages.size();
 
@@ -130,6 +144,9 @@ MemoryContextPackage ContextBuilder::BuildContext(const MemoryContextRequest& re
     std::vector<std::string> citations;
     if (ShouldInclude(request, context_sections::LongTerm) && longTermStore_ != nullptr && searchStore_ != nullptr && longTermLimit > 0) {
         SelectedLongTermMemory selected = SelectLongTermMemory(longTermStore_, searchStore_, request, longTermLimit);
+        if (!selected.succeeded) {
+            return {false, {}, selected.error};
+        }
         result.entities = selected.snapshot.entities;
         result.relations = selected.snapshot.relations;
         std::string longTermText = RenderLongTermMemory(selected, citations);
@@ -155,27 +172,30 @@ MemoryContextPackage ContextBuilder::BuildContext(const MemoryContextRequest& re
     result.metadata["relation_count"] = result.relations.size();
 
     if (ShouldInclude(request, context_sections::Payloads)) {
-        std::vector<MemoryPayloadRef> selectedPayloads = LoadPayloadsForContext(request);
-        if (!selectedPayloads.empty()) {
+        auto selectedPayloads = LoadPayloadsForContext(request);
+        if (!selectedPayloads) {
+            return {false, {}, selectedPayloads.error};
+        }
+        if (!selectedPayloads.payloads.empty()) {
             std::stringstream payloadOverview;
             if (!result.memoryText.empty()) {
                 payloadOverview << "\n";
             }
             payloadOverview << "## Offloaded Payloads\n\n";
-            for (const auto& p : selectedPayloads) {
+            for (const auto& p : selectedPayloads.payloads) {
                 payloadOverview << "- uri: " << p.uri
                                 << ", tool: " << p.toolName
                                 << ", chars: " << p.originalChars
                                 << ", summary: " << p.summary << "\n";
             }
-            result.metadata["payload_count"] = selectedPayloads.size();
+            result.metadata["payload_count"] = selectedPayloads.payloads.size();
             result.memoryText += payloadOverview.str();
-            result.payloadRefs = std::move(selectedPayloads);
+            result.payloadRefs = std::move(selectedPayloads.payloads);
         } else {
             result.metadata["payload_count"] = 0;
         }
     }
-    return result;
+    return {true, result, {}};
 }
 
 namespace {
@@ -189,7 +209,13 @@ SelectedLongTermMemory SelectLongTermMemory(MemoryLongTermStore* longTermStore, 
     }
 
     if (request.query.empty()) {
-        selected.snapshot = longTermStore->LoadLongTermMemory(request.agentId, limit, request.sessionId);
+        auto snapshot = longTermStore->LoadLongTermMemory(request.agentId, limit, request.sessionId);
+        if (!snapshot) {
+            selected.succeeded = false;
+            selected.error = snapshot.error;
+            return selected;
+        }
+        selected.snapshot = std::move(snapshot.snapshot);
         return selected;
     }
 
@@ -198,10 +224,22 @@ SelectedLongTermMemory SelectLongTermMemory(MemoryLongTermStore* longTermStore, 
     searchRequest.sessionId = request.sessionId;
     searchRequest.query = request.query;
     searchRequest.limit = limit;
-    selected.searchResults = searchStore->SearchLongTermMemory(searchRequest);
+    auto searchResult = searchStore->SearchLongTermMemory(searchRequest);
+    if (!searchResult) {
+        selected.succeeded = false;
+        selected.error = searchResult.error;
+        return selected;
+    }
+    selected.searchResults = std::move(searchResult.results);
     selected.usedSearch = true;
 
-    LongTermMemorySnapshot snapshot = longTermStore->LoadLongTermMemory(request.agentId, limit, request.sessionId);
+    auto snapshotResult = longTermStore->LoadLongTermMemory(request.agentId, limit, request.sessionId);
+    if (!snapshotResult) {
+        selected.succeeded = false;
+        selected.error = snapshotResult.error;
+        return selected;
+    }
+    LongTermMemorySnapshot snapshot = std::move(snapshotResult.snapshot);
     std::set<std::string> selectedEntityIds;
     std::set<std::string> selectedRelationIds;
     for (const auto& result : selected.searchResults) {
@@ -242,54 +280,61 @@ std::string RenderLongTermMemory(const SelectedLongTermMemory& selected,
 
 } // namespace
 
-std::vector<MemoryMessage> ContextBuilder::LoadMessagesForContext(const MemoryContextRequest& request) const
+MemoryEventsResult ContextBuilder::LoadMessagesForContext(const MemoryContextRequest& request) const
 {
-    std::vector<MemoryMessage> messages;
+    MemoryEventsResult result;
     if (eventStore_ == nullptr) {
-        return messages;
+        result.succeeded = true;
+        return result;
     }
 
     int limit = std::max(0, MetadataInt(request.metadata, "message_limit", 20));
     if (limit == 0) {
-        return messages;
+        result.succeeded = true;
+        return result;
     }
 
-    for (const auto& event : eventStore_->LoadRecentEvents(request.agentId, request.sessionId, limit)) {
-        if (event.type != MemoryEventType::MESSAGE_APPENDED) {
-            continue;
-        }
-        MemoryMessage message;
-        message.role = event.role;
-        message.content = event.content;
-        message.toolCallId = event.toolCallId;
-        message.toolName = event.toolName;
-        message.payloadRef = event.payloadRef;
-        messages.push_back(std::move(message));
+    auto events = eventStore_->LoadRecentEvents(request.agentId, request.sessionId, limit);
+    if (!events) {
+        return events;
     }
-    return messages;
+    for (const auto& event : events.events) {
+        if (event.type == MemoryEventType::MESSAGE_APPENDED) {
+            result.events.push_back(event);
+        }
+    }
+    result.succeeded = true;
+    return result;
 }
 
-std::vector<MemoryPayloadRef> ContextBuilder::LoadPayloadsForContext(const MemoryContextRequest& request) const
+MemoryPayloadRefsResult ContextBuilder::LoadPayloadsForContext(const MemoryContextRequest& request) const
 {
+    MemoryPayloadRefsResult result;
     int limit = std::max(0, MetadataInt(request.metadata, "payload_limit", 20));
     if (limit == 0 || payloadStore_ == nullptr) {
-        return {};
+        result.succeeded = true;
+        return result;
+    }
+
+    auto payloads = payloadStore_->LoadRecentPayloads(request.agentId, request.sessionId, limit);
+    if (!payloads) {
+        return payloads;
     }
 
     PayloadQuery query = ParsePayloadQuery(request.query);
-    std::vector<MemoryPayloadRef> combined;
     std::set<std::string> seen;
-    for (const auto& payload : payloadStore_->LoadRecentPayloads(request.agentId, request.sessionId, limit)) {
+    for (const auto& payload : payloads.payloads) {
         if (!seen.insert(payload.uri).second || !MatchesPayloadQuery(payload, query)) {
             continue;
         }
-        combined.push_back(payload);
-        if (limit > 0 && static_cast<int>(combined.size()) >= limit) {
+        result.payloads.push_back(payload);
+        if (limit > 0 && static_cast<int>(result.payloads.size()) >= limit) {
             break;
         }
     }
 
-    return combined;
+    result.succeeded = true;
+    return result;
 }
 
 bool ContextBuilder::ShouldInclude(const MemoryContextRequest& request, std::string_view section) const

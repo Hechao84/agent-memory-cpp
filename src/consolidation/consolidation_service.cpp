@@ -45,24 +45,33 @@ MemoryConsolidationResult ConsolidationService::Consolidate(const MemoryConsolid
                      !update.entities.empty() || !update.relations.empty();
     MemoryUpdateWriteResult sessionWrite;
     MemoryUpdateWriteResult updateWrite;
-    bool ok = writer_.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+    MemoryOperationResult operation = writer_.RunInTransaction([&](MemoryStoreTransaction& transaction) {
         sessionWrite = writer_.SaveSessionSummary(transaction, request.agentId, buildResult.sessionId,
                                                  buildResult.sessionSummary, buildResult.sessionSourceRefs);
+        if (!sessionWrite.succeeded) {
+            return MemoryFailure("consolidation_failed", "failed to persist session summary", sessionWrite.error.details,
+                                 sessionWrite.error.retryable);
+        }
         if (hasUpdate) {
             updateWrite = writer_.SaveUpdate(transaction, request.agentId, buildResult.sessionId, update,
                                             buildResult.batch.sourceRefs);
+            if (!updateWrite.succeeded) {
+                return MemoryFailure("consolidation_failed", "failed to persist memory update", updateWrite.error.details,
+                                     updateWrite.error.retryable);
+            }
         }
-        return sessionWrite.succeeded && updateWrite.succeeded;
+        return MemorySuccess();
     });
 
-    result.succeeded = ok;
-    if (ok) {
+    result.succeeded = operation.succeeded;
+    if (operation) {
         result.savedSummaries = sessionWrite.savedSummaries + updateWrite.savedSummaries;
         result.savedEntities = updateWrite.savedEntities;
         result.savedRelations = updateWrite.savedRelations;
     }
-    if (!ok) {
-        result.error = {"consolidation_failed", "failed to persist consolidation update", "", false};
+    if (!operation) {
+        result.error = operation.error ? operation.error
+                                       : MemoryError{"consolidation_failed", "failed to persist consolidation update", "", false};
     }
     return result;
 }
