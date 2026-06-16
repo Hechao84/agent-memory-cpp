@@ -14,7 +14,6 @@ public:
 private:
     bool ContainsPreferenceSignal(const std::string& text) const;
     std::string DetectTopic(const std::string& text) const;
-    std::string ToLower(const std::string& text) const;
 };
 
 } // namespace agent_memory

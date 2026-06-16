@@ -58,6 +58,7 @@ set(AGENT_MEMORY_UTILS_SOURCES
     src/utils/curl_client.cpp
     src/utils/file_util.cpp
     src/utils/path_util.cpp
+    src/utils/string_util.cpp
 )
 
 set(AGENT_MEMORY_SERVER_SOURCES

@@ -4,6 +4,8 @@
 #include <new>
 #include <thread>
 
+#include "string_util.h"
+
 namespace agent_memory {
 
 namespace {
@@ -36,14 +38,7 @@ bool HasContentType(const std::unordered_map<std::string, std::string>& headers)
         if (h.first.size() != target.size()) {
             continue;
         }
-        bool match = true;
-        for (std::string::size_type i = 0; i < target.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(h.first[i])) != target[i]) {
-                match = false;
-                break;
-            }
-        }
-        if (match) {
+        if (EqualsIgnoreCase(h.first, target)) {
             return true;
         }
     }

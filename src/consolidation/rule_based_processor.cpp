@@ -1,19 +1,11 @@
 #include "rule_based_processor.h"
 
-#include <cctype>
 #include <set>
 #include <utility>
 
-namespace agent_memory {
+#include "string_util.h"
 
-std::string RuleBasedLongTermMemoryProcessor::ToLower(const std::string& text) const
-{
-    std::string result = text;
-    for (char& ch : result) {
-        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
-    }
-    return result;
-}
+namespace agent_memory {
 
 bool RuleBasedLongTermMemoryProcessor::ContainsPreferenceSignal(const std::string& text) const
 {
