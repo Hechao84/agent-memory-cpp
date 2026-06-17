@@ -63,6 +63,27 @@ void MemoryHttpServer::RegisterRoutes(httplib::Server& server)
 
     server.Get(R"(/v1/payloads/(.*))", [this](const httplib::Request& req, httplib::Response& res) {
         std::string match = req.matches[1].str();
+        // Basic depth filtering as defense-in-depth against path traversal
+        if (match.empty()) {
+            res.status = 400;
+            MemoryError err{"invalid_payload_path", "empty payload path", "", false};
+            res.set_content(ErrorEnvelope(err).dump(), "application/json");
+            return;
+        }
+        if (match.find("..") != std::string::npos) {
+            res.status = 400;
+            MemoryError err{"invalid_payload_path", "path contains forbidden traversal sequence", "", false};
+            res.set_content(ErrorEnvelope(err).dump(), "application/json");
+            return;
+        }
+        for (unsigned char c : match) {
+            if (c < 0x20) {
+                res.status = 400;
+                MemoryError err{"invalid_payload_path", "path contains control character", "", false};
+                res.set_content(ErrorEnvelope(err).dump(), "application/json");
+                return;
+            }
+        }
         HandleJsonGet(res, [this, match]() {
             std::string uri = "file://" + match;
             auto result = runtime_.ReadPayload(uri);
