@@ -4,6 +4,7 @@
 #include "llm_processor.h"
 #include "long_term_memory_processor.h"
 #include "memory_update_writer.h"
+#include "store.h"
 
 namespace agent_memory {
 
@@ -24,7 +25,24 @@ MemoryConsolidationResult ConsolidationService::Consolidate(const MemoryConsolid
     result.processedEvents = static_cast<int>(buildResult.batch.events.size());
 
     if (buildResult.batch.events.empty()) {
-        result.succeeded = true;
+        if (buildResult.nextCursor.empty()) {
+            result.succeeded = true;
+            return result;
+        }
+        MemoryOperationResult operation = writer_.RunInTransaction([&](MemoryStoreTransaction& transaction) {
+            auto cursorWrite = transaction.SaveConsolidationCursor(request.agentId, request.sessionId, buildResult.nextCursor);
+            if (!cursorWrite) {
+                return cursorWrite.error.HasError()
+                           ? cursorWrite
+                           : MemoryFailure("cursor_save_failed", "failed to persist consolidation cursor");
+            }
+            return MemorySuccess();
+        });
+        result.succeeded = operation.succeeded;
+        if (!operation) {
+            result.error = operation.error.HasError() ? operation.error
+                                                      : MemoryError{"cursor_save_failed", "failed to persist consolidation cursor", "", false};
+        }
         return result;
     }
 
@@ -58,6 +76,14 @@ MemoryConsolidationResult ConsolidationService::Consolidate(const MemoryConsolid
             if (!updateWrite.succeeded) {
                 return MemoryFailure("consolidation_failed", "failed to persist memory update", updateWrite.error.details,
                                      updateWrite.error.retryable);
+            }
+        }
+        if (!buildResult.nextCursor.empty()) {
+            auto cursorWrite = transaction.SaveConsolidationCursor(request.agentId, request.sessionId, buildResult.nextCursor);
+            if (!cursorWrite) {
+                return cursorWrite.error.HasError()
+                           ? cursorWrite
+                           : MemoryFailure("cursor_save_failed", "failed to persist consolidation cursor");
             }
         }
         return MemorySuccess();

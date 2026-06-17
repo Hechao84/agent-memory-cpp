@@ -101,6 +101,8 @@ public:
     virtual MemoryOperationResult SaveEntity(const MemoryEntity& entity) = 0;
     virtual MemoryOperationResult SaveRelation(const MemoryRelation& relation) = 0;
     virtual MemoryOperationResult MarkEntityObsolete(const std::string& entityId, const std::string& supersededBy) = 0;
+    virtual MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId,
+                                                          const std::string& cursor) = 0;
 };
 
 class MemoryEventStore

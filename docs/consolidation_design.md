@@ -57,7 +57,7 @@ BuiltinMemoryRuntime::Consolidate
      -> MemoryUpdateWriter::RunInTransaction
         -> SaveSessionSummary
         -> SaveUpdate
-  -> SaveConsolidationCursor
+        -> SaveConsolidationCursor
 ```
 
 ## 批处理构造
@@ -96,16 +96,18 @@ BuiltinMemoryRuntime::Consolidate
 - entities 保存为长期实体。
 - relations 保存为实体关系。
 - 写入过程在 Store 事务中执行。
+- cursor 与本次长期记忆写入在同一个 Store 事务中保存；事务失败时长期记忆和 cursor 一起回滚，避免数据已推进但 cursor 未推进造成重复处理。
 
 实体去重和替换由 Store/Writer 配合完成，SQLite 实现支持把重复或被替代实体标记为 obsolete。
 
 ## 错误处理
 
-- 无事件可处理时返回 `succeeded=true`、`processedEvents=0`、空 `error` 和空 `nextCursor`，表示任务成功完成但没有新工作。
+- 无事件可处理且 `nextCursor` 为空时返回 `succeeded=true`、`processedEvents=0`、空 `error` 和空 `nextCursor`，表示任务成功完成但没有新工作。
+- 如果读取到了事件但全部被批处理过滤掉（例如非 message 事件），`processedEvents=0` 但 `nextCursor` 非空；此时仍会在事务中保存 cursor，避免下次重复扫描同一批被过滤事件。
 - 写入失败返回 `consolidation_failed`，并尽量传播 Store 层的错误详情。
 - 读取 cursor 失败由 Runtime 返回 `cursor_load_failed`。
 - 读取事件失败由 Runtime 返回 `events_load_failed`。
-- 保存 cursor 失败由 Runtime 返回 `cursor_save_failed`。
+- 保存 cursor 失败会让 consolidation 事务回滚，并返回 `cursor_save_failed` 或 Store 层错误。
 
 ## 与其他模块关系
 

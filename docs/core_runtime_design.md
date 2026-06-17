@@ -86,7 +86,7 @@ Store 是事件的单一事实来源，Runtime 不再维护事件内存快照。
 2. 读取当前 agent/session 的 consolidation cursor。
 3. 读取游标之后的事件。
 4. 调用 `ConsolidationService::Consolidate`。
-5. 成功后保存新游标。
+5. `ConsolidationService` 在同一个 Store 事务中写入长期记忆和新游标。
 
 ## 并发设计
 

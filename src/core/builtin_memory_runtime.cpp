@@ -94,16 +94,7 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
                                                      : MemoryError{"events_load_failed", "failed to load events for consolidation", "", false};
         return result;
     }
-    MemoryConsolidationResult result = consolidationService->Consolidate(request, eventsResult.events, model);
-    if (result.succeeded && store != nullptr && !result.nextCursor.empty()) {
-        auto cursorResult = store->SaveConsolidationCursor(request.agentId, request.sessionId, result.nextCursor);
-        if (!cursorResult) {
-            result.succeeded = false;
-            result.error = cursorResult.error.HasError() ? cursorResult.error
-                                                          : MemoryError{"cursor_save_failed", "failed to persist consolidation cursor", "", false};
-        }
-    }
-    return result;
+    return consolidationService->Consolidate(request, eventsResult.events, model);
 }
 
 BuiltinMemoryRuntime::BuiltinMemoryRuntime(MemoryConfig config)

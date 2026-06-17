@@ -49,7 +49,33 @@ public:
         return MemorySuccess();
     }
     MemoryOperationResult MarkEntityObsolete(const std::string&, const std::string&) override { return MemorySuccess(); }
-    MemoryOperationResult RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work) override { return work(*this); }
+    MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override
+    {
+        if (failCursorSave) {
+            return MemoryFailure("cursor_save_failed", "cursor save failed", "forced failure");
+        }
+        cursors[agentId + ":" + sessionId] = cursor;
+        return MemorySuccess();
+    }
+    MemoryOperationResult RunInTransaction(const std::function<MemoryOperationResult(MemoryStoreTransaction& transaction)>& work) override
+    {
+        auto savedPayloads = payloads;
+        auto savedSummaryLevels = summaryLevels;
+        auto savedSummaries = summaries;
+        auto savedEntities = entities;
+        auto savedRelations = relations;
+        auto savedCursors = cursors;
+        auto result = work(*this);
+        if (!result) {
+            payloads = savedPayloads;
+            summaryLevels = savedSummaryLevels;
+            summaries = savedSummaries;
+            entities = savedEntities;
+            relations = savedRelations;
+            cursors = savedCursors;
+        }
+        return result;
+    }
     ConsolidationCursorResult LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override
     {
         ConsolidationCursorResult result;
@@ -57,11 +83,6 @@ public:
         result.cursor = it == cursors.end() ? std::string() : it->second;
         result.succeeded = true;
         return result;
-    }
-    MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override
-    {
-        cursors[agentId + ":" + sessionId] = cursor;
-        return MemorySuccess();
     }
     MemoryEventsResult LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
                                              const std::string& cursor) const override
@@ -137,6 +158,7 @@ public:
     std::vector<MemoryRelation> relations;
     mutable std::map<std::string, std::string> cursors;
     bool failEntitySave{false};
+    bool failCursorSave{false};
 };
 
 class StaticModelClient : public ModelClient
@@ -355,6 +377,64 @@ bool TestConsolidationFallback()
     return true;
 }
 
+bool TestConsolidationFilteredEventsAdvanceCursor()
+{
+    InMemoryStore store;
+    MemoryUpdateWriter writer(store);
+    RuleBasedLongTermMemoryProcessor fallback;
+    ConsolidationService service(writer, &fallback);
+
+    MemoryConsolidationRequest request;
+    request.agentId = "agent-1";
+    request.sessionId = "session-1";
+    request.maxEvents = 10;
+
+    MemoryEvent event = Message("system", "started");
+    event.type = MemoryEventType::SESSION_STARTED;
+    event.storeCursor = "7";
+
+    auto result = service.Consolidate(request, {event}, nullptr);
+    if (!result || result.processedEvents != 0 || result.nextCursor != "7") {
+        std::cerr << "filtered event consolidation should succeed and expose next cursor\n";
+        return false;
+    }
+    if (store.cursors["agent-1:session-1"] != "7") {
+        std::cerr << "filtered event consolidation should advance cursor\n";
+        return false;
+    }
+    if (!store.summaries.empty() || !store.entities.empty() || !store.relations.empty()) {
+        std::cerr << "filtered event consolidation should not persist memory updates\n";
+        return false;
+    }
+    return true;
+}
+
+bool TestConsolidationCursorSaveFailureRollsBack()
+{
+    InMemoryStore store;
+    store.failCursorSave = true;
+    MemoryUpdateWriter writer(store);
+    RuleBasedLongTermMemoryProcessor fallback;
+    ConsolidationService service(writer, &fallback);
+
+    MemoryConsolidationRequest request;
+    request.agentId = "agent-1";
+    request.sessionId = "session-1";
+    request.maxEvents = 10;
+
+    std::vector<MemoryEvent> events = {Message("user", "I prefer transactional cursor saves")};
+    auto result = service.Consolidate(request, events, nullptr);
+    if (result || result.error.code != "cursor_save_failed") {
+        std::cerr << "cursor save failure should fail consolidation\n";
+        return false;
+    }
+    if (!store.summaries.empty() || !store.entities.empty() || !store.relations.empty() || !store.cursors.empty()) {
+        std::cerr << "cursor save failure should roll back consolidation writes\n";
+        return false;
+    }
+    return true;
+}
+
 bool TestLlmProcessorEdgeCases()
 {
     LongTermMemoryBatch batch;
@@ -476,6 +556,12 @@ int main()
         return 1;
     }
     if (!TestConsolidationFallback()) {
+        return 1;
+    }
+    if (!TestConsolidationFilteredEventsAdvanceCursor()) {
+        return 1;
+    }
+    if (!TestConsolidationCursorSaveFailureRollsBack()) {
         return 1;
     }
     if (!TestLlmProcessorEdgeCases()) {

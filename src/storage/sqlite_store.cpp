@@ -354,6 +354,14 @@ public:
                                                                          : SqliteFailure(store_.db_, "Transaction::MarkEntityObsolete");
     }
 
+    MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId,
+                                                  const std::string& cursor) override
+    {
+        return store_.SaveConsolidationCursorUnlocked(agentId, sessionId, cursor)
+                   ? MemorySuccess()
+                   : SqliteFailure(store_.db_, "Transaction::SaveConsolidationCursor");
+    }
+
 private:
     MemorySqliteStore& store_;
 };
