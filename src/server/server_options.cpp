@@ -99,7 +99,7 @@ void LoadMemoryOptions(const nlohmann::json& memory, ServerOptions& opts)
 
 void LoadModelOptions(const nlohmann::json& model, ServerOptions& opts)
 {
-    ValidateKeys(model, {"enabled", "strict", "formatType", "provider", "baseUrl", "apiKey", "modelName", "organization", "anthropicVersion", "anthropic-version", "timeoutSeconds", "maxTokens", "max_tokens", "temperature", "headers", "extraParams"}, "model.");
+    ValidateKeys(model, {"enabled", "strict", "formatType", "baseUrl", "apiKey", "modelName", "organization", "anthropicVersion", "anthropic-version", "timeoutSeconds", "maxTokens", "max_tokens", "temperature", "headers", "extraParams"}, "model.");
     opts.strictModelConfig = LoadBool(model, "strict", opts.strictModelConfig);
     if (LoadBool(model, "enabled", true)) {
         opts.modelConfig = model;
