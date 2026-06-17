@@ -11,14 +11,14 @@ namespace agent_memory {
 /** Event kinds that can be appended to short-term memory. */
 enum class MemoryEventType
 {
-    SESSION_STARTED,
-    SESSION_ENDED,
-    MESSAGE_APPENDED,
-    TOOL_CALL_STARTED,
-    TOOL_CALL_FINISHED,
-    PAYLOAD_OFFLOADED,
-    CONSOLIDATION_REQUESTED,
-    CONSOLIDATION_COMPLETED,
+    SESSION_STARTED,       ///< 会话正式开始
+    SESSION_ENDED,         ///< 会话结束
+    MESSAGE_APPENDED,      ///< 普通文本消息追加（user/assistant/system/tool 消息）
+    TOOL_CALL_STARTED,      ///< 工具调用开始
+    TOOL_CALL_FINISHED,    ///< 工具调用完成，结果已写入
+    PAYLOAD_OFFLOADED,     ///< 大内容已卸载到外部文件，仅保留引用
+    CONSOLIDATION_REQUESTED, ///< 手动请求触发长期记忆 consolidation
+    CONSOLIDATION_COMPLETED, ///< consolidation 完成
 };
 
 /** Short-term event stored as the source stream for context and consolidation. */

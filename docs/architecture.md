@@ -58,7 +58,6 @@ agent-memory-cpp 是一个独立的 C++17 Agent 记忆运行时，目标是为 A
 - REST：`src/transport/http/memory_http_server.cpp` 注册 `/v1/events`、`/v1/context`、`/v1/payloads`、`/v1/consolidate`、`/v1/search`、`/v1/stats`、`/health`。
 - MCP：`src/transport/mcp/memory_mcp_protocol.cpp` 支持 `initialize`、`tools/list`、`tools/call`，并映射到记忆工具。
 - CLI Server：`src/server/server_main.cpp` 负责读取配置、创建运行时、启动 HTTP/MCP 服务；`src/server/server_cli.*` 负责命令行参数解析。
-- Payload query：`src/core/payload_query.*` 负责 context 构建时的 payload 引用过滤。
 
 ### 2. 运行时编排层
 
@@ -74,6 +73,7 @@ agent-memory-cpp 是一个独立的 C++17 Agent 记忆运行时，目标是为 A
 
 - ContextBuilder：根据最近消息、长期记忆、检索结果和载荷引用构造上下文包。
 - PayloadService：对大文本工具结果做文件卸载、引用生成、读取和安全路径校验。
+- PayloadQuery：context 构建时的 payload 引用过滤模块，支持按查询关键词过滤 payload。
 - ConsolidationService：批量读取事件，生成会话摘要和长期记忆更新。
 - LongTermMemoryProcessor：长期记忆抽取接口。
 - RuleBasedLongTermMemoryProcessor：默认规则抽取实现。

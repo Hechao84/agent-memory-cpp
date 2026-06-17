@@ -86,7 +86,7 @@ SDK 初始化参数。
 | --- | --- | --- | --- | --- |
 | `agentId` | string | 否 | 空 | Agent 标识 |
 | `sessionId` | string | 否 | 空 | 会话标识 |
-| `content` | string | 是 | 空 | payload 原文 |
+| `content` | string | 否 | 空 | payload 原文；为空时不会 offload，直接返回空 replacement content |
 | `contentType` | string | 否 | 空 | 内容类型，如 `text/plain`、`application/json` |
 | `toolCallId` | string | 否 | 空 | 工具调用 ID |
 | `toolName` | string | 否 | 空 | 工具名称 |
@@ -129,6 +129,8 @@ HTTP/MCP 读取 payload 时当前响应 data 为 `{ "uri": "...", "content": "..
 ### MemoryConsolidationRequest
 
 `forceReprocess=true` 会忽略保存的 cursor 从头重跑当前 agent/session 范围内事件；`maxEvents<=0` 表示不裁剪批次，处理加载到的全部事件。
+
+当 `forceReprocess=false` 且 `maxEvents=0` 时：不会读取新事件，仅 consolidation 已加载批次，cursor 不会推进。该用法可用于强制触发 consolidation 重新处理已有事件，不摄入新事件。
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
@@ -200,15 +202,21 @@ HTTP/MCP 读取 payload 时当前响应 data 为 `{ "uri": "...", "content": "..
 
 `BuiltinMemoryRuntime::GetModelStatus()` 返回 runtime 内置模型状态；不描述单次 `Consolidate(request, model)` 传入的宿主模型。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `configured` | boolean | 是否配置了内置模型 |
-| `available` | boolean | 内置模型是否可用 |
-| `formatType` | string | 模型协议，如 `openai` 或 `anthropic` |
-| `modelName` | string | 模型名称 |
-| `error` | string | 加载或校验失败原因 |
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `configured` | boolean | `false` | 是否配置了内置模型 |
+| `available` | boolean | `false` | 内置模型是否可用 |
+| `formatType` | string | 空 | 模型协议，`openai` 或 `anthropic` |
+| `modelName` | string | 空 | 模型名称 |
+| `error` | string | 空 | 加载或校验失败原因 |
 
 ### 错误码目录
+
+所有错误结果都包含 `retryable` 布尔字段，语义：
+- `true`: 调用方可以安全重试本次操作，重试大概率成功
+- `false`: 重试不会成功，需要先修复错误条件再重试
+
+不同错误码的 `retryable` 取值由具体实现决定，文档不硬编码每个错误码固定值，调用方应以返回结果中的 `retryable` 为准。
 
 | 错误码 | 典型来源 | 含义 |
 | --- | --- | --- |
@@ -908,6 +916,18 @@ POST /mcp
 | `model.enabled` | boolean | `false` | 是否启用模型 |
 | `model.strict` | boolean | `false` | 模型配置失败时是否启动失败 |
 | `model.formatType` | string | `openai` | 模型协议，`openai` 或 `anthropic` |
+| `model.baseUrl` | string | - | LLM API 服务端点地址 |
+| `model.apiKey` | string | - | API 鉴权密钥 |
+| `model.modelName` | string | - | 模型名称，如 `gpt-4o`、`claude-3-5-sonnet` |
+| `model.organization` | string | 空 | OpenAI 组织 ID |
+| `model.anthropicVersion` | string | 空 | Anthropic API 版本，如 `2023-06-01` |
+| `model.anthropic-version` | string | 空 | 兼容旧版配置文档的 Anthropic API 版本 |
+| `model.timeoutSeconds` | integer | `120` | API 请求超时秒数 |
+| `model.maxTokens` | integer | `1024` | 最大生成 token 数 |
+| `model.max_tokens` | integer | `1024` | 兼容 OpenAI style 命名的最大生成 token 数 |
+| `model.temperature` | number | `1.0` | 生成温度 |
+| `model.headers` | object | `{}` | 额外附加到请求的 HTTP header |
+| `model.extraParams` | object | `{}` | 传递给 LLM API 的额外参数 |
 | `server.debugErrors` | boolean | `false` | 是否向客户端返回异常详情 |
 | `server.auth.apiToken` | string | 空 | Bearer Token，空表示不启用认证 |
 | `server.http.host` | string | `127.0.0.1` | HTTP 监听地址 |
