@@ -11,6 +11,13 @@ test -f "$DIST_DIR/lib/libagent_memory.so"
 test -f "$DIST_DIR/include/agent_memory/runtime.h"
 test -f "$DIST_DIR/include/agent_memory/builtin_memory_runtime.h"
 test -f "$DIST_DIR/include/agent_memory/error.h"
+test -f "$DIST_DIR/include/agent_memory/config.h"
+test -f "$DIST_DIR/include/agent_memory/context.h"
+test -f "$DIST_DIR/include/agent_memory/event.h"
+test -f "$DIST_DIR/include/agent_memory/long_term_memory.h"
+test -f "$DIST_DIR/include/agent_memory/model_client.h"
+test -f "$DIST_DIR/include/agent_memory/payload.h"
+test -f "$DIST_DIR/include/agent_memory/search.h"
 test -f "$DIST_DIR/examples/memory_server/server_config.example.json"
 
 cat > "$TMP_DIR/sdk_smoke.cpp" <<'CPP'
