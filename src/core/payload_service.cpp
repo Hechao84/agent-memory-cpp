@@ -99,6 +99,14 @@ MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRe
         result.offloaded = false;
         result.error = saveResult.error.HasError() ? saveResult.error
                                                    : MemoryError{"payload_write_failed", "failed to persist payload metadata", "", false};
+        if (removeError) {
+            std::string details = result.error.details;
+            if (!details.empty()) {
+                details += "; ";
+            }
+            details += "orphan payload file remaining: " + payloadPath.string() + ", remove error: " + removeError.message();
+            result.error.details = details;
+        }
         result.replacementContent = request.content;
     }
     return result;
@@ -118,11 +126,15 @@ MemoryPayloadReadResult PayloadService::ReadPayload(const std::string& ref) cons
     if (!IsPathInsideDirectory(payloadPath, canonicalPayloadDirectory_)) {
         return {false, {}, {"payload_read_failed", "payload path outside configured payload directory", "", false}};
     }
-    std::string content = LoadTextFile(CanonicalPath(payloadPath), true).value_or("");
-    if (content.empty()) {
-        return {false, {}, {"payload_read_failed", "payload file is empty or unreadable", "", false}};
+    auto contentOpt = LoadTextFile(CanonicalPath(payloadPath), true);
+    if (!contentOpt.has_value()) {
+        return {false, {}, {"payload_read_failed", "payload file is unreadable or does not exist", "", false}};
     }
-    return {true, content, {}};
+    std::string content = std::move(*contentOpt);
+    if (content.empty()) {
+        return {false, {}, {"payload_read_failed", "payload file is empty", "", false}};
+    }
+    return {true, std::move(content), {}};
 }
 
 std::string PayloadService::BuildPayloadRef(const MemoryPayloadWriteRequest& request) const

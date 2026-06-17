@@ -402,6 +402,41 @@ int main()
      }
      fs::remove_all(nullStoreDataPath);
 
+     // Test #18: ReadPayload distinguishes empty file from unreadable file
+     MemoryConfig readTestConfig;
+     readTestConfig.dataPath = dataPath.string();
+     readTestConfig.enablePayloadOffload = true;
+     BuiltinMemoryRuntime readTestRuntime(readTestConfig);
+
+     // Create empty file inside payload directory to pass path check
+     fs::path payloadDir = dataPath / "memory_runtime" / "payloads";
+     fs::create_directories(payloadDir);
+     fs::path emptyTestPath = payloadDir / "empty_test.txt";
+     {
+         std::ofstream emptyFile(emptyTestPath);
+         // leave empty
+     }
+     std::string emptyUri = "file://" + emptyTestPath.string();
+     auto emptyResult = readTestRuntime.ReadPayload(emptyUri);
+     if (emptyResult.succeeded || emptyResult.error.code != "payload_read_failed" ||
+         emptyResult.error.message != "payload file is empty") {
+         std::cerr << "empty payload file should fail with 'payload file is empty'\n";
+         std::cerr << "Got: code=" << emptyResult.error.code << ", message='" << emptyResult.error.message << "'\n";
+         return 1;
+     }
+     fs::remove(emptyTestPath);
+
+     // Test non-existent file inside payload directory gives correct error
+     std::string missingPath = (payloadDir / "missing_test.txt").string();
+     std::string missingUri = "file://" + missingPath;
+     auto missingResult = readTestRuntime.ReadPayload(missingUri);
+     if (missingResult.succeeded || missingResult.error.code != "payload_read_failed" ||
+         missingResult.error.message != "payload file is unreadable or does not exist") {
+         std::cerr << "missing payload file should fail with 'payload file is unreadable or does not exist'\n";
+         std::cerr << "Got: code=" << missingResult.error.code << ", message='" << missingResult.error.message << "'\n";
+         return 1;
+     }
+
      MemoryConsolidationRequest consolidateRequest;
     consolidateRequest.agentId = "agent-1";
     consolidateRequest.sessionId = "session-1";
@@ -718,8 +753,8 @@ int main()
                   << " payload_refs=" << payloadRefs.size() << "\n";
         return 1;
     }
-    fs::remove_all(concurrentDataPath);
+     fs::remove_all(concurrentDataPath);
 
-    fs::remove_all(dataPath);
-    return 0;
+      fs::remove_all(dataPath);
+      return 0;
 }
