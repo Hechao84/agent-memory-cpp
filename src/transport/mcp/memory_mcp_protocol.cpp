@@ -50,10 +50,31 @@ void MemoryMcpProtocol::InitToolHandlers()
         return MakeTextResult(result ? SuccessEnvelope({{"stats", StatsToJson(result.stats)}}) : ErrorEnvelope(result.error));
     };
 
-    methodHandlers_["initialize"] = [this](const nlohmann::json&, const nlohmann::json& id) {
-        return Success(id, {{"protocolVersion", "2024-11-05"},
-                            {"serverInfo", {{"name", "memory-server"}, {"version", AGENT_MEMORY_VERSION}}},
-                            {"capabilities", {{"tools", nlohmann::json::object()}}}});
+    methodHandlers_["initialize"] = [this](const nlohmann::json& req, const nlohmann::json& id) {
+        if (!req.contains("params")) {
+            return Error(id, -32602, "missing params object in initialize request");
+        }
+        auto params = req["params"];
+        if (!params.contains("protocolVersion") || !params["protocolVersion"].is_string()) {
+            return Error(id, -32602, "missing required string field 'protocolVersion' in initialize params");
+        }
+        std::string clientVersion = params["protocolVersion"].get<std::string>();
+        constexpr const char* kSupportedVersion = "2024-11-05";
+        if (clientVersion != kSupportedVersion) {
+            std::string msg = "unsupported protocol version: client sent " + clientVersion +
+                              ", server only supports " + kSupportedVersion;
+            return Error(id, -32602, msg);
+        }
+        return Success(id, nlohmann::json{
+            {"protocolVersion", kSupportedVersion},
+            {"serverInfo", nlohmann::json{
+                {"name", "memory-server"},
+                {"version", AGENT_MEMORY_VERSION}
+            }},
+            {"capabilities", nlohmann::json{
+                {"tools", nlohmann::json::object()}
+            }}
+        });
     };
     methodHandlers_["tools/list"] = [this](const nlohmann::json&, const nlohmann::json& id) {
         return Success(id, cachedTools_);

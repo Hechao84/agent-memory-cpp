@@ -238,10 +238,18 @@ bool TestMcpProtocolCoverage()
     BuiltinMemoryRuntime runtime(config);
     MemoryMcpProtocol protocol(runtime, true);
 
-    auto initialize = protocol.HandleJsonRpc({{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"}});
+    auto initialize = protocol.HandleJsonRpc({{
+        "jsonrpc", "2.0"},
+        {"id", 1},
+        {"method", "initialize"},
+        {"params", {{"protocolVersion", "2024-11-05"}}}
+    });
     bool ok = Check(initialize.contains("result"), "MCP initialize failed");
-    ok = Check(ok && initialize["result"]["serverInfo"].value("version", std::string()) == AGENT_MEMORY_VERSION,
+    ok = Check(ok && initialize["result"]["serverInfo"].value<std::string>("version", "") == AGENT_MEMORY_VERSION,
                "MCP initialize should expose build version");
+    std::string protocolVersion = initialize["result"].value<std::string>("protocolVersion", "");
+    ok = Check(ok && protocolVersion == "2024-11-05",
+               "MCP initialize should reply with supported protocolVersion");
     auto list = protocol.HandleJsonRpc({{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}});
     ok = Check(ok && list["result"]["tools"].size() >= 7, "MCP tools/list failed");
 
