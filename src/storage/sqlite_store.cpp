@@ -1367,7 +1367,9 @@ bool MemorySqliteStore::SaveEntityUnlocked(const MemoryEntity& entity)
     }
 
     if (!entity.supersededEntityId.empty()) {
-        MarkEntityObsoleteUnlocked(entity.supersededEntityId, entity.id);
+        if (!MarkEntityObsoleteUnlocked(entity.supersededEntityId, entity.id)) {
+            return false;
+        }
     }
 
     return true;
@@ -1383,21 +1385,23 @@ bool MemorySqliteStore::SaveRelationUnlocked(const MemoryRelation& relation)
     }
     std::string metadataStr = metadata.dump();
 
-    {
-        const char* obsoleteSql = "UPDATE memory_relations SET active = 0, updated_at = CURRENT_TIMESTAMP "
-                                  "WHERE from_entity = ? AND relation = ? AND to_entity = ? AND active = 1 AND agent_id = ?;";
-        SQLiteStatement obsoleteStmt(db_, obsoleteSql);
-        if (obsoleteStmt) {
-            sqlite3_bind_text(obsoleteStmt.get(), 1, relation.fromEntityId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(obsoleteStmt.get(), 2, relation.relationType.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(obsoleteStmt.get(), 3, relation.toEntityId.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_text(obsoleteStmt.get(), 4, relation.agentId.c_str(), -1, SQLITE_TRANSIENT);
-            int rc = sqlite3_step(obsoleteStmt.get());
-            if (rc != SQLITE_DONE && rc != SQLITE_OK) {
-                LogSqliteError(db_, "SaveRelation::obsolete_step");
-            }
-        }
-    }
+     {
+         const char* obsoleteSql = "UPDATE memory_relations SET active = 0, updated_at = CURRENT_TIMESTAMP "
+                                   "WHERE from_entity = ? AND relation = ? AND to_entity = ? AND active = 1 AND agent_id = ?;";
+         SQLiteStatement obsoleteStmt(db_, obsoleteSql);
+         if (!obsoleteStmt) {
+             return false;
+         }
+         sqlite3_bind_text(obsoleteStmt.get(), 1, relation.fromEntityId.c_str(), -1, SQLITE_TRANSIENT);
+         sqlite3_bind_text(obsoleteStmt.get(), 2, relation.relationType.c_str(), -1, SQLITE_TRANSIENT);
+         sqlite3_bind_text(obsoleteStmt.get(), 3, relation.toEntityId.c_str(), -1, SQLITE_TRANSIENT);
+         sqlite3_bind_text(obsoleteStmt.get(), 4, relation.agentId.c_str(), -1, SQLITE_TRANSIENT);
+         int rc = sqlite3_step(obsoleteStmt.get());
+         if (rc != SQLITE_DONE && rc != SQLITE_OK) {
+             LogSqliteError(db_, "SaveRelation::obsolete_step");
+             return false;
+         }
+     }
 
     const char* sql = "INSERT INTO memory_relations "
                       "(agent_id, from_entity, relation, to_entity, confidence, source_refs_json, metadata_json, active) "
@@ -1422,7 +1426,9 @@ bool MemorySqliteStore::SaveRelationUnlocked(const MemoryRelation& relation)
     }
 
     if (relation.relationType == "supersedes") {
-        MarkEntityObsoleteUnlocked(relation.toEntityId, relation.fromEntityId);
+        if (!MarkEntityObsoleteUnlocked(relation.toEntityId, relation.fromEntityId)) {
+            return false;
+        }
     }
 
     return true;

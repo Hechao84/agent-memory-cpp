@@ -48,7 +48,13 @@ public:
         relations.push_back(relation);
         return MemorySuccess();
     }
-    MemoryOperationResult MarkEntityObsolete(const std::string&, const std::string&) override { return MemorySuccess(); }
+    MemoryOperationResult MarkEntityObsolete(const std::string&, const std::string&) override
+    {
+        if (failMarkEntityObsolete) {
+            return MemoryFailure("mark_obsolete_failed", "mark entity obsolete failed", "forced failure");
+        }
+        return MemorySuccess();
+    }
     MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override
     {
         if (failCursorSave) {
@@ -159,6 +165,7 @@ public:
     mutable std::map<std::string, std::string> cursors;
     bool failEntitySave{false};
     bool failCursorSave{false};
+    bool failMarkEntityObsolete{false};
 };
 
 class StaticModelClient : public ModelClient
@@ -303,6 +310,8 @@ bool TestMemoryUpdateWriterFailureStopsUpdate()
     MemoryUpdateWriter writer(store);
 
     LongTermMemoryUpdate update;
+    update.topicSummaries.push_back("Discussed topic: testing");
+    update.profileSummaries.push_back("User prefers concise answers");
     MemoryEntity entity;
     entity.id = "entity:test";
     entity.agentId = "agent-1";
@@ -322,6 +331,46 @@ bool TestMemoryUpdateWriterFailureStopsUpdate()
     }
     if (store.entities.size() != 1 || !store.relations.empty()) {
         std::cerr << "writer should stop after entity save failure\n";
+        return false;
+    }
+    return true;
+}
+
+bool TestMarkObsoleteFailureFailsWrite()
+{
+    InMemoryStore store;
+    store.failMarkEntityObsolete = true;
+    MemoryUpdateWriter writer(store);
+
+    LongTermMemoryUpdate update;
+    MemoryEntity entity;
+    entity.id = "entity:new";
+    entity.agentId = "agent-1";
+    entity.supersededEntityId = "entity:old";
+    update.entities.push_back(entity);
+
+    auto work = [&](MemoryStoreTransaction& txn) -> MemoryOperationResult {
+        auto writeResult = writer.SaveUpdate(txn, "agent-1", "session-1", update, {"session://session-1#event:1"});
+        if (!writeResult.succeeded) {
+            if (writeResult.error.HasError()) {
+                MemoryOperationResult res;
+                res.succeeded = false;
+                res.error = writeResult.error;
+                return res;
+            } else {
+                return MemoryFailure("write_failed", "write failed");
+            }
+        }
+        return MemorySuccess();
+    };
+    std::function<MemoryOperationResult(MemoryStoreTransaction&)> workFunc = work;
+    MemoryOperationResult result = store.RunInTransaction(work);
+    if (result.succeeded) {
+        std::cerr << "write should fail when obsolete marking fails\n";
+        return false;
+    }
+    if (!store.entities.empty()) {
+        std::cerr << "write should roll back new entity when obsolete marking fails\n";
         return false;
     }
     return true;
@@ -550,6 +599,9 @@ int main()
         return 1;
     }
     if (!TestMemoryUpdateWriterFailureStopsUpdate()) {
+        return 1;
+    }
+    if (!TestMarkObsoleteFailureFailsWrite()) {
         return 1;
     }
     if (!TestConsolidationNoEventsSucceeds()) {

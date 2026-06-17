@@ -365,13 +365,44 @@ int main()
         std::cerr << "payload path traversal should be rejected\n";
         return 1;
     }
-    auto missingPayloadRead = runtime.ReadPayload("file://" + (dataPath / "memory_runtime" / "payloads" / "missing.txt").string());
-    if (missingPayloadRead || missingPayloadRead.error.code != "payload_read_failed") {
-        std::cerr << "missing payload file should fail with structured error\n";
-        return 1;
-    }
+     auto missingPayloadRead = runtime.ReadPayload("file://" + (dataPath / "memory_runtime" / "payloads" / "missing.txt").string());
+     if (missingPayloadRead || missingPayloadRead.error.code != "payload_read_failed") {
+         std::cerr << "missing payload file should fail with structured error\n";
+         return 1;
+     }
+     // Test offload with null payload store: should fail immediately without writing file
+     fs::path nullStoreDataPath = fs::temp_directory_path() / "agent_memory_cpp_null_store_test";
+     fs::remove_all(nullStoreDataPath);
+     MemoryConfig nullStoreConfig;
+     nullStoreConfig.dataPath = nullStoreDataPath.string();
+     nullStoreConfig.enablePayloadOffload = true;
+     nullStoreConfig.offloadThresholdChars = 1;
+     PayloadService nullStoreService(nullStoreConfig, nullStoreConfig.dataPath, nullptr);
+     auto nullStoreResult = nullStoreService.WritePayload(payloadRequest);
+     if (nullStoreResult.succeeded || nullStoreResult.offloaded || nullStoreResult.error.code != "payload_store_unavailable") {
+         std::cerr << "offload with null store should fail immediately with payload_store_unavailable\n";
+         return 1;
+     }
+     if (nullStoreResult.replacementContent != payloadRequest.content) {
+         std::cerr << "null store offload failure should return original content as replacement\n";
+         return 1;
+     }
+     fs::path nullPayloadDirectory = nullStoreDataPath / "memory_runtime" / "payloads";
+     bool hasFiles = false;
+     if (fs::exists(nullPayloadDirectory)) {
+         for (auto const& entry : fs::directory_iterator(nullPayloadDirectory)) {
+             (void)entry;
+             hasFiles = true;
+             break;
+         }
+     }
+     if (hasFiles) {
+         std::cerr << "null store offload failure should not create orphan payload files\n";
+         return 1;
+     }
+     fs::remove_all(nullStoreDataPath);
 
-    MemoryConsolidationRequest consolidateRequest;
+     MemoryConsolidationRequest consolidateRequest;
     consolidateRequest.agentId = "agent-1";
     consolidateRequest.sessionId = "session-1";
     auto consolidationResult = runtime.Consolidate(consolidateRequest);

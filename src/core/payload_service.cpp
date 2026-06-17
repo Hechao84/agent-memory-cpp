@@ -64,6 +64,14 @@ MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRe
         return result;
     }
 
+    if (store_ == nullptr) {
+        result.succeeded = false;
+        result.offloaded = false;
+        result.error = MemoryError{"payload_store_unavailable",
+                              "payload offload requires a persistent store for metadata", "", false};
+        result.replacementContent = request.content;
+        return result;
+    }
     ScheduleTempFileCleanup();
 
     std::string ref = BuildPayloadRef(request);
@@ -82,17 +90,16 @@ MemoryPayloadWriteResult PayloadService::WritePayload(const MemoryPayloadWriteRe
     result.payload.toolName = request.toolName;
     result.payload.originalChars = static_cast<int>(request.content.size());
     result.replacementContent = "[memory-ref: " + result.payload.uri + "]\n" + result.payload.summary;
-    if (store_ != nullptr) {
-        auto saveResult = store_->SavePayload(result.payload);
-        if (!saveResult) {
-            std::error_code removeError;
-            fs::remove(payloadPath, removeError);
-            result.succeeded = false;
-            result.offloaded = false;
-            result.error = saveResult.error.HasError() ? saveResult.error
-                                                       : MemoryError{"payload_write_failed", "failed to persist payload metadata", "", false};
-            result.replacementContent = request.content;
-        }
+
+    auto saveResult = store_->SavePayload(result.payload);
+    if (!saveResult) {
+        std::error_code removeError;
+        fs::remove(payloadPath, removeError);
+        result.succeeded = false;
+        result.offloaded = false;
+        result.error = saveResult.error.HasError() ? saveResult.error
+                                                   : MemoryError{"payload_write_failed", "failed to persist payload metadata", "", false};
+        result.replacementContent = request.content;
     }
     return result;
 }
