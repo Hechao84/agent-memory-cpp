@@ -123,7 +123,7 @@ std::vector<std::string> ParseSourceRefsColumn(sqlite3_stmt* stmt, int col)
 MemoryEvent ReadEventRow(sqlite3_stmt* stmt)
 {
     MemoryEvent event;
-    event.storeCursor = std::to_string(sqlite3_column_int(stmt, 0));
+    event.storeCursor = std::to_string(sqlite3_column_int64(stmt, 0));
     event.agentId = ColumnText(stmt, 1);
     event.sessionId = ColumnText(stmt, 2);
     event.type = static_cast<MemoryEventType>(sqlite3_column_int(stmt, 3));
@@ -176,13 +176,13 @@ void LogSqliteExecError(char* errMsg, const std::string& context)
     }
 }
 
-int CursorToInt(const std::string& cursor)
+ int64_t CursorToInt(const std::string& cursor)
 {
     if (cursor.empty()) {
         return 0;
     }
     try {
-        return std::stoi(cursor);
+        return std::stoll(cursor);
     } catch (...) {
         return 0;
     }
@@ -692,12 +692,12 @@ ConsolidationCursorResult MemorySqliteStore::LoadConsolidationCursor(const std::
     sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
 
     int rc = sqlite3_step(stmt.get());
-    if (rc == SQLITE_ROW) {
-        result.cursor = std::to_string(sqlite3_column_int(stmt.get(), 0));
-    } else if (rc != SQLITE_DONE) {
-        result.error = SqliteFailure(db_, "LoadConsolidationCursor::step").error;
-        return result;
-    }
+     if (rc == SQLITE_ROW) {
+         result.cursor = std::to_string(sqlite3_column_int64(stmt.get(), 0));
+     } else if (rc != SQLITE_DONE) {
+         result.error = SqliteFailure(db_, "LoadConsolidationCursor::step").error;
+         return result;
+     }
     result.succeeded = true;
     return result;
 }
@@ -722,7 +722,7 @@ MemoryEventsResult MemorySqliteStore::LoadEventsAfterCursor(const std::string& a
         return result;
     }
 
-    int cursorValue = CursorToInt(cursor);
+    int64_t cursorValue = CursorToInt(cursor);
     const char* sqlWithSession = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
                                  "FROM memory_events WHERE id > ? AND agent_id = ? AND session_id = ? "
                                  "ORDER BY id ASC;";
@@ -734,7 +734,7 @@ MemoryEventsResult MemorySqliteStore::LoadEventsAfterCursor(const std::string& a
         result.error = SqliteFailure(db_, "LoadEventsAfterCursor::prepare").error;
         return result;
     }
-    sqlite3_bind_int(stmt.get(), 1, cursorValue);
+    sqlite3_bind_int64(stmt.get(), 1, cursorValue);
     sqlite3_bind_text(stmt.get(), 2, agentId.c_str(), -1, SQLITE_TRANSIENT);
     if (!sessionId.empty()) {
         sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
@@ -1487,10 +1487,10 @@ bool MemorySqliteStore::SaveConsolidationCursorUnlocked(const std::string& agent
     if (!stmt) {
         return false;
     }
-    int cursorValue = CursorToInt(cursor);
+    int64_t cursorValue = CursorToInt(cursor);
     sqlite3_bind_text(stmt.get(), 1, agentId.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, sessionId.c_str(), -1, SQLITE_TRANSIENT);
-    sqlite3_bind_int(stmt.get(), 3, cursorValue);
+    sqlite3_bind_int64(stmt.get(), 3, cursorValue);
 
     if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
         LogSqliteError(db_, "SaveConsolidationCursor::step");
