@@ -25,10 +25,10 @@ struct AGENT_MEMORY_API ModelInvokeResult
 };
 
 /** Host-implemented or built-in model client used by consolidation. */
-class AGENT_MEMORY_API ModelClient
+class AGENT_MEMORY_API MemoryModelClient
 {
 public:
-    virtual ~ModelClient() = default;
+    virtual ~MemoryModelClient() = default;
 
     /** Generates a long-term-memory update JSON string from the supplied prompt. */
     virtual ModelInvokeResult GenerateMemoryUpdate(const std::string& prompt) = 0;

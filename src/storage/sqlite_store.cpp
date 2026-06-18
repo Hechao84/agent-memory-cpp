@@ -241,33 +241,33 @@ double FallbackScore(const std::string& type)
     return config.relationFallbackScore;
 }
 
-void ApplyFtsScore(MemorySearchResult& result, double bm25Rank)
+void ApplyFtsScore(MemorySearchHit& hit, double bm25Rank)
 {
     double rawRank = std::max(0.0, -bm25Rank);
     double normalized = rawRank > 0.0 ? rawRank / (rawRank + 1.0) : 0.0;
-    double weight = TypeWeight(result.type);
-    result.score = static_cast<float>(normalized * weight);
-    result.metadata["scoreSource"] = "fts_bm25";
-    result.metadata["rawRank"] = rawRank;
-    result.metadata["typeWeight"] = weight;
+    double weight = TypeWeight(hit.type);
+    hit.score = static_cast<float>(normalized * weight);
+    hit.metadata["scoreSource"] = "fts_bm25";
+    hit.metadata["rawRank"] = rawRank;
+    hit.metadata["typeWeight"] = weight;
 }
 
-void ApplyFallbackScore(MemorySearchResult& result)
+void ApplyFallbackScore(MemorySearchHit& hit)
 {
-    result.score = static_cast<float>(FallbackScore(result.type));
-    result.metadata["scoreSource"] = "like_fallback";
+    hit.score = static_cast<float>(FallbackScore(hit.type));
+    hit.metadata["scoreSource"] = "like_fallback";
 }
 
-void SortAndLimitSearchResults(std::vector<MemorySearchResult>& results, int limit)
+void SortAndLimitSearchResults(std::vector<MemorySearchHit>& hits, int limit)
 {
-    std::sort(results.begin(), results.end(), [](const MemorySearchResult& lhs, const MemorySearchResult& rhs) {
+    std::sort(hits.begin(), hits.end(), [](const MemorySearchHit& lhs, const MemorySearchHit& rhs) {
         if (lhs.score != rhs.score) {
             return lhs.score > rhs.score;
         }
         return lhs.id < rhs.id;
     });
-    if (limit > 0 && static_cast<int>(results.size()) > limit) {
-        results.resize(static_cast<size_t>(limit));
+    if (limit > 0 && static_cast<int>(hits.size()) > limit) {
+        hits.resize(static_cast<size_t>(limit));
     }
 }
 
@@ -932,16 +932,16 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
         sqlite3_bind_text(stmt.get(), 4, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt.get(), 5, limit);
         int rc = SQLITE_ROW;
-        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-            MemorySearchResult item;
-            item.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
-            item.type = "summary";
-            item.content = ColumnText(stmt.get(), 1) + ": " +
-                           ColumnText(stmt.get(), 2) + ": " +
-                           ColumnText(stmt.get(), 3);
-            item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
-            ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 5));
-            results.push_back(std::move(item));
+         while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+             MemorySearchHit item;
+             item.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
+             item.type = "summary";
+             item.content = ColumnText(stmt.get(), 1) + ": " +
+                            ColumnText(stmt.get(), 2) + ": " +
+                            ColumnText(stmt.get(), 3);
+             item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+             ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 5));
+             results.push_back(std::move(item));
         }
         if (rc != SQLITE_DONE) {
             LogSqliteError(db_, "SearchLongTermMemory::fts_summaries_step");
@@ -966,18 +966,18 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
         sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt.get(), 3, limit);
         int rc = SQLITE_ROW;
-        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-            MemorySearchResult item;
-            item.id = ColumnText(stmt.get(), 0);
-            item.type = "entity";
-            item.content = ColumnText(stmt.get(), 2) + ": " +
-                           ColumnText(stmt.get(), 3) + ": " +
-                           ColumnText(stmt.get(), 4);
-            item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
-            item.metadata = ParseJsonColumn(stmt.get(), 6);
-            ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 7));
-            results.push_back(std::move(item));
-        }
+         while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+             MemorySearchHit item;
+             item.id = ColumnText(stmt.get(), 0);
+             item.type = "entity";
+             item.content = ColumnText(stmt.get(), 2) + ": " +
+                            ColumnText(stmt.get(), 3) + ": " +
+                            ColumnText(stmt.get(), 4);
+             item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
+             item.metadata = ParseJsonColumn(stmt.get(), 6);
+             ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 7));
+             results.push_back(std::move(item));
+         }
         if (rc != SQLITE_DONE) {
             LogSqliteError(db_, "SearchLongTermMemory::fts_entities_step");
             results.clear();
@@ -1001,17 +1001,17 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
         sqlite3_bind_text(stmt.get(), 2, ftsQuery.c_str(), -1, SQLITE_TRANSIENT);
         sqlite3_bind_int(stmt.get(), 3, limit);
         int rc = SQLITE_ROW;
-        while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-            MemorySearchResult item;
-            item.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
-            item.type = "relation";
-            item.content = ColumnText(stmt.get(), 1) + " " +
-                           ColumnText(stmt.get(), 2) + " " +
-                           ColumnText(stmt.get(), 3);
-            item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
-            ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 5));
-            results.push_back(std::move(item));
-        }
+         while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
+             MemorySearchHit item;
+             item.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
+             item.type = "relation";
+             item.content = ColumnText(stmt.get(), 1) + " " +
+                            ColumnText(stmt.get(), 2) + " " +
+                            ColumnText(stmt.get(), 3);
+             item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
+             ApplyFtsScore(item, sqlite3_column_double(stmt.get(), 5));
+             results.push_back(std::move(item));
+         }
         if (rc != SQLITE_DONE) {
             LogSqliteError(db_, "SearchLongTermMemory::fts_relations_step");
             results.clear();
@@ -1039,7 +1039,7 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
             sqlite3_bind_int(stmt.get(), 6, limit);
             int rc = SQLITE_ROW;
             while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-                MemorySearchResult item;
+                MemorySearchHit item;
                 item.id = "summary:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
                 item.type = "summary";
                 item.content = ColumnText(stmt.get(), 1) + ": " +
@@ -1048,7 +1048,7 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
                 item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 4);
                 ApplyFallbackScore(item);
                 results.push_back(std::move(item));
-            }
+             }
             if (rc != SQLITE_DONE) {
                 result.error = SqliteFailure(db_, "SearchLongTermMemory::like_summaries_step").error;
                 return result;
@@ -1072,7 +1072,7 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
             sqlite3_bind_int(stmt.get(), 6, limit);
             int rc = SQLITE_ROW;
             while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-                MemorySearchResult item;
+                MemorySearchHit item;
                 item.id = ColumnText(stmt.get(), 0);
                 item.type = "entity";
                 item.content = ColumnText(stmt.get(), 2) + ": " +
@@ -1082,7 +1082,7 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
                 item.metadata = ParseJsonColumn(stmt.get(), 6);
                 ApplyFallbackScore(item);
                 results.push_back(std::move(item));
-            }
+             }
             if (rc != SQLITE_DONE) {
                 result.error = SqliteFailure(db_, "SearchLongTermMemory::like_entities_step").error;
                 return result;
@@ -1105,7 +1105,7 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
             sqlite3_bind_int(stmt.get(), 5, limit);
             int rc = SQLITE_ROW;
             while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {
-                MemorySearchResult item;
+                MemorySearchHit item;
                 item.id = "relation:" + std::to_string(sqlite3_column_int(stmt.get(), 0));
                 item.type = "relation";
                 item.content = ColumnText(stmt.get(), 2) + " " +
@@ -1114,7 +1114,7 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
                 item.sourceRefs = ParseSourceRefsColumn(stmt.get(), 5);
                 ApplyFallbackScore(item);
                 results.push_back(std::move(item));
-            }
+             }
             if (rc != SQLITE_DONE) {
                 result.error = SqliteFailure(db_, "SearchLongTermMemory::like_relations_step").error;
                 return result;

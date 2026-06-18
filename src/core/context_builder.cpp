@@ -37,7 +37,7 @@ struct SelectedLongTermMemory
 {
     bool succeeded{true};
     LongTermMemorySnapshot snapshot;
-    std::vector<MemorySearchResult> searchResults;
+    std::vector<MemorySearchHit> searchResults;
     bool usedSearch{false};
     MemoryError error;
 };
@@ -75,38 +75,38 @@ std::string FormatLongTermSnapshot(const LongTermMemorySnapshot& snapshot)
     return text.str();
 }
 
-std::string FormatSearchResults(const std::vector<MemorySearchResult>& searchResults)
+std::string FormatSearchResults(const std::vector<MemorySearchHit>& searchResults)
 {
-    if (searchResults.empty()) {
-        return "";
-    }
-    std::stringstream stream;
-    stream << "## Relevant Long-Term Memory\n";
-    for (const auto& item : searchResults) {
-        stream << "- [" << item.type << "] " << item.content << "\n";
-    }
-    return stream.str();
+     if (searchResults.empty()) {
+         return "";
+     }
+     std::stringstream stream;
+     stream << "## Relevant Long-Term Memory\n";
+     for (const auto& item : searchResults) {
+         stream << "- [" << item.type << "] " << item.content << "\n";
+     }
+     return stream.str();
 }
 
-void CollectSnapshotCitations(std::vector<std::string>& citations, const LongTermMemorySnapshot& snapshot)
-{
-    for (const auto& summary : snapshot.summaries) {
-        AddUniqueCitations(citations, summary.sourceRefs);
-    }
-    for (const auto& entity : snapshot.entities) {
-        AddUniqueCitations(citations, entity.sourceRefs);
-    }
-    for (const auto& relation : snapshot.relations) {
-        AddUniqueCitations(citations, relation.sourceRefs);
-    }
-}
+ void CollectSnapshotCitations(std::vector<std::string>& citations, const LongTermMemorySnapshot& snapshot)
+ {
+     for (const auto& summary : snapshot.summaries) {
+         AddUniqueCitations(citations, summary.sourceRefs);
+     }
+     for (const auto& entity : snapshot.entities) {
+         AddUniqueCitations(citations, entity.sourceRefs);
+     }
+     for (const auto& relation : snapshot.relations) {
+         AddUniqueCitations(citations, relation.sourceRefs);
+     }
+ }
 
-void CollectSearchCitations(std::vector<std::string>& citations, const std::vector<MemorySearchResult>& searchResults)
-{
-    for (const auto& result : searchResults) {
-        AddUniqueCitations(citations, result.sourceRefs);
-    }
-}
+ void CollectSearchCitations(std::vector<std::string>& citations, const std::vector<MemorySearchHit>& searchResults)
+ {
+     for (const auto& result : searchResults) {
+         AddUniqueCitations(citations, result.sourceRefs);
+     }
+ }
 
 SelectedLongTermMemory SelectLongTermMemory(MemoryLongTermStore* longTermStore, MemorySearchStore* searchStore,
                                              const MemoryContextRequest& request, int limit);

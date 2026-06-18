@@ -21,7 +21,7 @@ struct MemoryModelConfigLoadResult
 
 struct ModelClientLoadResult
 {
-    std::unique_ptr<ModelClient> client;
+    std::unique_ptr<MemoryModelClient> client;
     std::string error;
 
     explicit operator bool() const { return client != nullptr; }

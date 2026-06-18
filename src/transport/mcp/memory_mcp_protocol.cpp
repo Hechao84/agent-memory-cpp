@@ -43,7 +43,7 @@ void MemoryMcpProtocol::InitToolHandlers()
     };
     toolHandlers_["memory_search"] = [this](const nlohmann::json& args) {
         auto result = runtime_.SearchMemory(SearchRequestFromJson(args));
-        return MakeTextResult(result ? SuccessEnvelope(SearchResponseToJson(result.results)) : ErrorEnvelope(result.error));
+        return MakeTextResult(result ? SuccessEnvelope(SearchResponseToJson(result.hits)) : ErrorEnvelope(result.error));
     };
     toolHandlers_["memory_stats"] = [this](const nlohmann::json&) {
         auto result = runtime_.GetStats();

@@ -15,7 +15,7 @@ ConsolidationService::ConsolidationService(MemoryUpdateWriter& writer, LongTermM
 
 MemoryConsolidationResult ConsolidationService::Consolidate(const MemoryConsolidationRequest& request,
                                                             const std::vector<MemoryEvent>& events,
-                                                            ModelClient* model)
+                                                            MemoryModelClient* model)
 {
     MemoryConsolidationResult result;
     ConsolidationBatchBuilder batchBuilder;

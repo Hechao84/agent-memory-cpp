@@ -13,7 +13,7 @@ struct OpenAiModelConfig : public ModelConfig
     std::string organization;
 };
 
-class OpenAiModelClient : public ModelClient
+class OpenAiModelClient : public MemoryModelClient
 {
 public:
     explicit OpenAiModelClient(OpenAiModelConfig config);

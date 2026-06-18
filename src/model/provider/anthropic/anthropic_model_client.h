@@ -13,7 +13,7 @@ struct AnthropicModelConfig : public ModelConfig
     std::string anthropicVersion{"2023-06-01"};
 };
 
-class AnthropicModelClient : public ModelClient
+class AnthropicModelClient : public MemoryModelClient
 {
 public:
     explicit AnthropicModelClient(AnthropicModelConfig config);

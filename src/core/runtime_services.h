@@ -12,7 +12,7 @@ class ContextBuilder;
 class LongTermMemoryProcessor;
 class MemoryStore;
 class MemoryUpdateWriter;
-class ModelClient;
+class MemoryModelClient;
 class PayloadService;
 
 struct RuntimeServices
@@ -25,7 +25,7 @@ struct RuntimeServices
     std::unique_ptr<ContextBuilder> contextBuilder;
     std::unique_ptr<MemoryUpdateWriter> memoryUpdateWriter;
     std::unique_ptr<ConsolidationService> consolidationService;
-    std::unique_ptr<ModelClient> modelClient;
+    std::unique_ptr<MemoryModelClient> modelClient;
     std::string modelClientError;
     std::string storeError;
 };

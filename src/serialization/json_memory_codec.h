@@ -52,7 +52,7 @@ nlohmann::json PayloadWriteResultToJson(const MemoryPayloadWriteResult& result);
 nlohmann::json ConsolidationRequestToJson(const MemoryConsolidationRequest& request);
 nlohmann::json ConsolidationResultToJson(const MemoryConsolidationResult& result);
 nlohmann::json SearchRequestToJson(const MemorySearchRequest& request);
-nlohmann::json SearchResponseToJson(const std::vector<MemorySearchResult>& results, bool ok = true);
+nlohmann::json SearchResponseToJson(const std::vector<MemorySearchHit>& hits, bool ok = true);
 
 bool DecodeMessage(const nlohmann::json& j, MemoryMessage& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodePayloadRef(const nlohmann::json& j, MemoryPayloadRef& value, JsonDecodeDiagnostics* diagnostics = nullptr);
@@ -60,13 +60,13 @@ bool DecodeEntity(const nlohmann::json& j, MemoryEntity& value, JsonDecodeDiagno
 bool DecodeRelation(const nlohmann::json& j, MemoryRelation& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodeEvent(const nlohmann::json& j, MemoryEvent& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodeContextPackage(const nlohmann::json& j, MemoryContextPackage& value, JsonDecodeDiagnostics* diagnostics = nullptr);
-bool DecodeContextRequest(const nlohmann::json& j, MemoryContextRequest& value, JsonDecodeDiagnostics* diagnostics = nullptr);
+bool DecodeContextRequest(const nlohmann::json& j, MemorySearchRequest& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodePayloadWriteRequest(const nlohmann::json& j, MemoryPayloadWriteRequest& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodePayloadWriteResult(const nlohmann::json& j, MemoryPayloadWriteResult& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodeConsolidationRequest(const nlohmann::json& j, MemoryConsolidationRequest& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodeConsolidationResult(const nlohmann::json& j, MemoryConsolidationResult& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodeSearchRequest(const nlohmann::json& j, MemorySearchRequest& value, JsonDecodeDiagnostics* diagnostics = nullptr);
-bool DecodeSearchResults(const nlohmann::json& j, std::vector<MemorySearchResult>& value, JsonDecodeDiagnostics* diagnostics = nullptr);
+bool DecodeSearchHits(const nlohmann::json& j, std::vector<MemorySearchHit>& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 bool DecodeStats(const nlohmann::json& j, MemoryStats& value, JsonDecodeDiagnostics* diagnostics = nullptr);
 
 MemoryMessage MessageFromJson(const nlohmann::json& j);
@@ -74,14 +74,14 @@ MemoryPayloadRef PayloadRefFromJson(const nlohmann::json& j);
 MemoryEntity EntityFromJson(const nlohmann::json& j);
 MemoryRelation RelationFromJson(const nlohmann::json& j);
 MemoryEvent EventFromJson(const nlohmann::json& j);
-MemoryContextPackage ContextPackageFromJson(const nlohmann::json& j);
 MemoryContextRequest ContextRequestFromJson(const nlohmann::json& j);
+MemoryContextPackage ContextPackageFromJson(const nlohmann::json& j);
 MemoryPayloadWriteRequest PayloadWriteRequestFromJson(const nlohmann::json& j);
 MemoryPayloadWriteResult PayloadWriteResultFromJson(const nlohmann::json& j, const std::string& defaultReplacementContent = "");
 MemoryConsolidationRequest ConsolidationRequestFromJson(const nlohmann::json& j);
 MemoryConsolidationResult ConsolidationResultFromJson(const nlohmann::json& j);
 MemorySearchRequest SearchRequestFromJson(const nlohmann::json& j);
-std::vector<MemorySearchResult> SearchResultsFromJson(const nlohmann::json& j);
+std::vector<MemorySearchHit> SearchResultsFromJson(const nlohmann::json& j);
 MemoryStats StatsFromJson(const nlohmann::json& j);
 
 } // namespace agent_memory

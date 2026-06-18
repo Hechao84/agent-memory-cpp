@@ -168,7 +168,7 @@ public:
     bool failMarkEntityObsolete{false};
 };
 
-class StaticModelClient : public ModelClient
+class StaticModelClient : public MemoryModelClient
 {
 public:
     explicit StaticModelClient(std::string response)

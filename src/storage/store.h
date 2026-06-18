@@ -70,14 +70,14 @@ struct LongTermMemorySnapshotResult
 struct MemorySearchStoreResult
 {
     bool succeeded{false};
-    std::vector<MemorySearchResult> results;
+    std::vector<MemorySearchHit> results;
     MemoryError error;
 
     explicit operator bool() const { return succeeded; }
     size_t size() const { return results.size(); }
-    const MemorySearchResult& operator[](size_t index) const { return results[index]; }
-    std::vector<MemorySearchResult>::const_iterator begin() const { return results.begin(); }
-    std::vector<MemorySearchResult>::const_iterator end() const { return results.end(); }
+    const MemorySearchHit& operator[](size_t index) const { return results[index]; }
+    std::vector<MemorySearchHit>::const_iterator begin() const { return results.begin(); }
+    std::vector<MemorySearchHit>::const_iterator end() const { return results.end(); }
 };
 
 struct ConsolidationCursorResult

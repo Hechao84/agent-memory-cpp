@@ -101,7 +101,7 @@ void MemoryHttpServer::RegisterRoutes(httplib::Server& server)
     server.Post("/v1/search", [this](const httplib::Request& req, httplib::Response& res) {
         HandleJsonPost(req, res, [this](const nlohmann::json& j) {
             auto result = runtime_.SearchMemory(SearchRequestFromJson(j));
-            return result ? SuccessEnvelope(SearchResponseToJson(result.results)) : ErrorEnvelope(result.error);
+             return result ? SuccessEnvelope(SearchResponseToJson(result.hits)) : ErrorEnvelope(result.error);
         });
     });
 

@@ -223,7 +223,7 @@ bool TestSafeMalformedInput()
         return false;
     }
 
-    MemorySearchResult malformedResult;
+    MemorySearchHit malformedResult;
     malformedResult.id = "id";
     malformedResult.type = "summary";
     malformedResult.content = "content";
@@ -283,13 +283,13 @@ bool TestSchemaAndDiagnostics()
                "search request diagnostics failed")) {
         return false;
     }
-    std::vector<MemorySearchResult> results;
-    if (!Check(!DecodeSearchResults(nlohmann::json::object(), results, &decodeDiagnostics) &&
-                   !decodeDiagnostics.errors.empty(),
-               "search results diagnostics failed")) {
-        return false;
-    }
-    auto responseJson = SearchResponseToJson(results);
+     std::vector<MemorySearchHit> results;
+     if (!Check(!DecodeSearchHits(nlohmann::json::object(), results, &decodeDiagnostics) &&
+                    !decodeDiagnostics.errors.empty(),
+                "search results diagnostics failed")) {
+         return false;
+     }
+     auto responseJson = SearchResponseToJson(results);
     if (!Check(responseJson.value("schemaVersion", 0) == 1 && responseJson.value("ok", false) &&
                    responseJson.contains("results"),
                "search response wrapper failed")) {
@@ -335,16 +335,16 @@ bool TestResultRoundTrips()
         return false;
     }
 
-    std::vector<MemorySearchResult> results;
-    MemorySearchResult result;
-    result.id = "id";
-    result.type = "summary";
-    result.content = "content";
-    result.score = 0.7F;
-    result.sourceRefs.push_back("source");
-    result.metadata["k"] = "v";
-    results.push_back(result);
-    auto decodedResults = SearchResultsFromJson(SearchResponseToJson(results));
+     std::vector<MemorySearchHit> results;
+     MemorySearchHit result;
+     result.id = "id";
+     result.type = "summary";
+     result.content = "content";
+     result.score = 0.7F;
+     result.sourceRefs.push_back("source");
+     result.metadata["k"] = "v";
+     results.push_back(result);
+     auto decodedResults = SearchResultsFromJson(SearchResponseToJson(results));
     if (!Check(decodedResults.size() == 1 && std::fabs(decodedResults[0].score - result.score) < 0.0001F &&
                    decodedResults[0].sourceRefs == result.sourceRefs && decodedResults[0].metadata == result.metadata,
                "search results round-trip failed")) {
