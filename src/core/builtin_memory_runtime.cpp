@@ -45,7 +45,7 @@ ConsolidationService* GetConsolidationService(BuiltinMemoryRuntimeImpl& impl)
     return impl.services->consolidationService.get();
 }
 
-ModelClient* GetConfiguredModel(BuiltinMemoryRuntimeImpl& impl)
+MemoryModelClient* GetConfiguredModel(BuiltinMemoryRuntimeImpl& impl)
 {
     std::lock_guard<std::mutex> lock(impl.mutex);
     return impl.services->modelClient.get();
@@ -59,7 +59,7 @@ std::string StoreUnavailableMessage(BuiltinMemoryRuntimeImpl& impl)
 
 MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
                                               const MemoryConsolidationRequest& request,
-                                              ModelClient* model)
+                                              MemoryModelClient* model)
 {
     ConsolidationService* consolidationService = GetConsolidationService(impl);
     MemoryStore* store = GetStore(impl);
@@ -154,7 +154,7 @@ MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolid
     return ConsolidateWithModel(*impl_, request, GetConfiguredModel(*impl_));
 }
 
-MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolidationRequest& request, ModelClient* model)
+MemoryConsolidationResult BuiltinMemoryRuntime::Consolidate(const MemoryConsolidationRequest& request, MemoryModelClient* model)
 {
     return ConsolidateWithModel(*impl_, request, model);
 }
@@ -171,7 +171,7 @@ MemoryModelStatus BuiltinMemoryRuntime::GetModelStatus() const
     return status;
 }
 
-MemorySearchResponse BuiltinMemoryRuntime::SearchMemory(const MemorySearchRequest& request)
+MemorySearchResult BuiltinMemoryRuntime::SearchMemory(const MemorySearchRequest& request)
 {
     MemoryStore* store = GetStore(*impl_);
     if (store == nullptr) {

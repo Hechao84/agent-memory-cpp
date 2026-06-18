@@ -10,8 +10,7 @@ data/
 # Program todo list
 todo.md
 
-# Sensitive Data & Local Config
-opencode.json
+# AI Assistant Config
 AGENTS.md
 CLAUDE.md
 

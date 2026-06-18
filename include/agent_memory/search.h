@@ -11,7 +11,7 @@
 namespace agent_memory {
 
 /** Single long-term memory search hit. */
-struct AGENT_MEMORY_API MemorySearchResult
+struct AGENT_MEMORY_API MemorySearchHit
 {
     /** Result id. Summary and relation ids may include type prefixes. */
     std::string id;
@@ -45,12 +45,12 @@ struct AGENT_MEMORY_API MemorySearchRequest
 };
 
 /** Result of SearchMemory. */
-struct AGENT_MEMORY_API MemorySearchResponse
+struct AGENT_MEMORY_API MemorySearchResult
 {
     /** True when search completed successfully. */
     bool succeeded{false};
     /** Search hits. */
-    std::vector<MemorySearchResult> results;
+    std::vector<MemorySearchHit> hits;
     /** Error information when succeeded is false. */
     MemoryError error;
 

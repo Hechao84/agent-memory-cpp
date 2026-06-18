@@ -49,9 +49,9 @@ public:
      * Passing nullptr explicitly disables model use. The model must remain valid for the duration
      * of the call; shared model instances must be thread-safe.
      */
-    virtual MemoryConsolidationResult Consolidate(const MemoryConsolidationRequest& request, ModelClient* model) = 0;
+    virtual MemoryConsolidationResult Consolidate(const MemoryConsolidationRequest& request, MemoryModelClient* model) = 0;
     /** Searches long-term memory. */
-    virtual MemorySearchResponse SearchMemory(const MemorySearchRequest& request) = 0;
+    virtual MemorySearchResult SearchMemory(const MemorySearchRequest& request) = 0;
     /** Returns Store statistics. */
     virtual MemoryStatsResult GetStats() const = 0;
 

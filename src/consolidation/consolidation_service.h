@@ -17,7 +17,7 @@ public:
     ConsolidationService(MemoryUpdateWriter& writer, LongTermMemoryProcessor* fallbackProcessor);
 
     MemoryConsolidationResult Consolidate(const MemoryConsolidationRequest& request, const std::vector<MemoryEvent>& events,
-                                          ModelClient* model);
+                                          MemoryModelClient* model);
 
 private:
     MemoryUpdateWriter& writer_;

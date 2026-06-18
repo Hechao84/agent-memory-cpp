@@ -6,7 +6,7 @@
 
 namespace agent_memory {
 
-LlmLongTermMemoryProcessor::LlmLongTermMemoryProcessor(ModelClient* model)
+LlmLongTermMemoryProcessor::LlmLongTermMemoryProcessor(MemoryModelClient* model)
     : model_(model)
 {
 }

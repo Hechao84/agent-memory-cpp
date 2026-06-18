@@ -11,14 +11,14 @@ namespace agent_memory {
 class LlmLongTermMemoryProcessor : public LongTermMemoryProcessor
 {
 public:
-    explicit LlmLongTermMemoryProcessor(ModelClient* model);
+    explicit LlmLongTermMemoryProcessor(MemoryModelClient* model);
     LongTermMemoryUpdate Process(const LongTermMemoryBatch& batch) override;
 
 private:
     std::string BuildPrompt(const LongTermMemoryBatch& batch) const;
     LongTermMemoryUpdate ParseResponse(const std::string& jsonStr, const std::vector<std::string>& sourceRefs,
                                      const std::string& agentId) const;
-    ModelClient* model_;
+    MemoryModelClient* model_;
 };
 
 } // namespace agent_memory

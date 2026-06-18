@@ -194,16 +194,16 @@ MemoryEventType EventTypeFromJson(const nlohmann::json& j)
     return MemoryEventType::SESSION_STARTED;
 }
 
-nlohmann::json SearchResultsArrayToJson(const std::vector<MemorySearchResult>& results)
+nlohmann::json SearchResultsArrayToJson(const std::vector<MemorySearchHit>& hits)
 {
     nlohmann::json arr = nlohmann::json::array();
-    for (const auto& result : results) {
-        arr.push_back({{"id", result.id},
-                       {"type", result.type},
-                       {"content", result.content},
-                       {"score", result.score},
-                       {"sourceRefs", result.sourceRefs},
-                       {"metadata", JsonObject(result.metadata)}});
+    for (const auto& hit : hits) {
+        arr.push_back({{"id", hit.id},
+                       {"type", hit.type},
+                       {"content", hit.content},
+                       {"score", hit.score},
+                       {"sourceRefs", hit.sourceRefs},
+                       {"metadata", JsonObject(hit.metadata)}});
     }
     return arr;
 }
@@ -670,33 +670,33 @@ MemorySearchRequest SearchRequestFromJson(const nlohmann::json& j)
     return request;
 }
 
-nlohmann::json SearchResponseToJson(const std::vector<MemorySearchResult>& results, bool ok)
+nlohmann::json SearchResponseToJson(const std::vector<MemorySearchHit>& hits, bool ok)
 {
-    return WithSchema({{"ok", ok}, {"results", SearchResultsArrayToJson(results)}});
+    return WithSchema({{"ok", ok}, {"results", SearchResultsArrayToJson(hits)}});
 }
 
-std::vector<MemorySearchResult> SearchResultsFromJson(const nlohmann::json& j)
+std::vector<MemorySearchHit> SearchResultsFromJson(const nlohmann::json& j)
 {
-    std::vector<MemorySearchResult> results;
+    std::vector<MemorySearchHit> hits;
     const auto& array = JsonFieldValue(j, "results");
     if (!j.is_object() || !array.is_array()) {
-        return results;
+        return hits;
     }
-    results.reserve(array.size());
+    hits.reserve(array.size());
     for (const auto& item : array) {
         if (!item.is_object()) {
             continue;
         }
-        MemorySearchResult result;
-        result.id = JsonString(item, "id");
-        result.type = JsonString(item, "type");
-        result.content = JsonString(item, "content");
-        result.score = JsonFloat(item, "score", 0.0F);
-        result.sourceRefs = StringVectorFromJson(JsonFieldValue(item, "sourceRefs"));
-        result.metadata = JsonObject(JsonFieldValue(item, "metadata"));
-        results.push_back(std::move(result));
+        MemorySearchHit hit;
+        hit.id = JsonString(item, "id");
+        hit.type = JsonString(item, "type");
+        hit.content = JsonString(item, "content");
+        hit.score = JsonFloat(item, "score", 0.0F);
+        hit.sourceRefs = StringVectorFromJson(JsonFieldValue(item, "sourceRefs"));
+        hit.metadata = JsonObject(JsonFieldValue(item, "metadata"));
+        hits.push_back(std::move(hit));
     }
-    return results;
+    return hits;
 }
 
 bool DecodeMessage(const nlohmann::json& j, MemoryMessage& value, JsonDecodeDiagnostics* diagnostics)
@@ -744,7 +744,7 @@ bool DecodePayloadWriteResult(const nlohmann::json& j, MemoryPayloadWriteResult&
     if (diagnostics != nullptr) {
         *diagnostics = JsonDecodeDiagnosticsFor(j, "payloadWriteResult");
     }
-    value = PayloadWriteResultFromJson(j);
+    value = PayloadWriteResultFromJson(j, "");
     return diagnostics == nullptr || diagnostics->ok();
 }
 
@@ -763,7 +763,7 @@ bool DecodeSearchRequest(const nlohmann::json& j, MemorySearchRequest& value, Js
     return DecodeWithDiagnostics(j, value, diagnostics, "searchRequest", SearchRequestFromJson);
 }
 
-bool DecodeSearchResults(const nlohmann::json& j, std::vector<MemorySearchResult>& value, JsonDecodeDiagnostics* diagnostics)
+bool DecodeSearchHits(const nlohmann::json& j, std::vector<MemorySearchHit>& value, JsonDecodeDiagnostics* diagnostics)
 {
     if (diagnostics != nullptr) {
         *diagnostics = JsonDecodeDiagnosticsFor(j, "searchResponse");

@@ -34,7 +34,7 @@ public:
     MemoryPayloadRefsResult LoadRecentPayloads(const std::string&, const std::string&, int) const override { return {true, {}, {}}; }
 };
 
-class StaticModelClient : public ModelClient
+class StaticModelClient : public MemoryModelClient
 {
 public:
     explicit StaticModelClient(std::string response) : response_(std::move(response)) {}
@@ -447,17 +447,17 @@ int main()
     }
     MemorySearchRequest searchRequest;
     searchRequest.agentId = "agent-1";
-    searchRequest.sessionId = "session-1";
-    searchRequest.query = "concise";
-    searchRequest.limit = 5;
-    if (runtime.SearchMemory(searchRequest).results.empty()) {
-        std::cerr << "SQLite memory search failed\n";
-        return 1;
-    }
-    auto emptySearchRequest = searchRequest;
-    emptySearchRequest.query.clear();
-    auto emptySearch = runtime.SearchMemory(emptySearchRequest);
-    if (!emptySearch || !emptySearch.results.empty()) {
+     searchRequest.sessionId = "session-1";
+     searchRequest.query = "concise";
+     searchRequest.limit = 5;
+     if (runtime.SearchMemory(searchRequest).hits.empty()) {
+         std::cerr << "SQLite memory search failed\n";
+         return 1;
+     }
+     auto emptySearchRequest = searchRequest;
+     emptySearchRequest.query.clear();
+     auto emptySearch = runtime.SearchMemory(emptySearchRequest);
+     if (!emptySearch || !emptySearch.hits.empty()) {
         std::cerr << "empty search query should succeed with no results\n";
         return 1;
     }
