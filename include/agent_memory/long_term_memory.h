@@ -77,6 +77,13 @@ struct AGENT_MEMORY_API MemoryConsolidationRequest
     int maxEvents{100};
     /** When true, ignores the saved cursor and reprocesses from the beginning. */
     bool forceReprocess{false};
+    /** Session ids whose events must be skipped by the batch builder. Events
+     *  belonging to these sessions are still persisted by the Store (audit
+     *  trail) and still advance the cursor, but they never enter the
+     *  consolidation batch and are not seen by the LLM/rule-based
+     *  processors. Empty by default to preserve the legacy behavior of
+     *  processing every session. */
+    std::vector<std::string> excludedSessionIds;
     /** Caller-defined metadata reserved for future controls. */
     nlohmann::json metadata = nlohmann::json::object();
 };

@@ -602,11 +602,13 @@ MemoryPayloadWriteResult PayloadWriteResultFromJson(const nlohmann::json& j, con
 
 nlohmann::json ConsolidationRequestToJson(const MemoryConsolidationRequest& request)
 {
-    return WithSchema({{"agentId", request.agentId},
-                       {"sessionId", request.sessionId},
-                       {"maxEvents", request.maxEvents},
-                       {"forceReprocess", request.forceReprocess},
-                       {"metadata", JsonObject(request.metadata)}});
+    nlohmann::json j = WithSchema({{"agentId", request.agentId},
+                                   {"sessionId", request.sessionId},
+                                   {"maxEvents", request.maxEvents},
+                                   {"forceReprocess", request.forceReprocess},
+                                   {"metadata", JsonObject(request.metadata)}});
+    j["excludedSessionIds"] = request.excludedSessionIds;
+    return j;
 }
 
 MemoryConsolidationRequest ConsolidationRequestFromJson(const nlohmann::json& j)
@@ -616,6 +618,7 @@ MemoryConsolidationRequest ConsolidationRequestFromJson(const nlohmann::json& j)
     request.sessionId = JsonString(j, "sessionId");
     request.maxEvents = JsonInt(j, "maxEvents", 100);
     request.forceReprocess = JsonBool(j, "forceReprocess", false);
+    request.excludedSessionIds = StringVectorFromJson(JsonFieldValue(j, "excludedSessionIds"));
     request.metadata = JsonObject(JsonFieldValue(j, "metadata"));
     return request;
 }

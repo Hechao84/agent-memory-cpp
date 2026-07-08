@@ -1,5 +1,6 @@
 #include "consolidation_batch_builder.h"
 
+#include <algorithm>
 #include <sstream>
 
 namespace agent_memory {
@@ -26,6 +27,11 @@ ConsolidationBatchBuildResult ConsolidationBatchBuilder::Build(const MemoryConso
         std::string eventCursor = !event.storeCursor.empty() ? event.storeCursor : std::to_string(i + 1);
         result.nextCursor = eventCursor;
         if (!request.sessionId.empty() && event.sessionId != request.sessionId) {
+            continue;
+        }
+        if (!request.excludedSessionIds.empty() &&
+            std::find(request.excludedSessionIds.begin(), request.excludedSessionIds.end(),
+                      event.sessionId) != request.excludedSessionIds.end()) {
             continue;
         }
         if (event.type != MemoryEventType::MESSAGE_APPENDED) {

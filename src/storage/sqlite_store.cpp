@@ -713,7 +713,8 @@ MemoryOperationResult MemorySqliteStore::SaveConsolidationCursor(const std::stri
 }
 
 MemoryEventsResult MemorySqliteStore::LoadEventsAfterCursor(const std::string& agentId,
-                                                             const std::string& sessionId, const std::string& cursor) const
+                                                             const std::string& sessionId, const std::string& cursor,
+                                                             const std::vector<std::string>& excludedSessionIds) const
 {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     MemoryEventsResult result;
@@ -723,21 +724,51 @@ MemoryEventsResult MemorySqliteStore::LoadEventsAfterCursor(const std::string& a
     }
 
     int64_t cursorValue = CursorToInt(cursor);
-    const char* sqlWithSession = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
+
+    // SQL is built dynamically when excludedSessionIds is non-empty so the
+    // NOT IN clause can carry the right number of placeholders. When the
+    // exclusion set is empty, the legacy static SQL is used verbatim to
+    // preserve query-plan stability for the common path.
+    //
+    // The NOT IN clause is intentionally only appended to sqlWithoutSession
+    // (the agent-level consolidation path with empty sessionId). When
+    // sessionId is non-empty, sqlWithSession already locks to a single
+    // session via session_id = ?, so NOT IN would never match any row that
+    // = ? did not already select or reject -- it would be a redundant
+    // no-op clause. jiuwen-lite's Agent::ConsolidationLoop always uses the
+    // empty-sessionId path, so the sqlWithSession branch is exercised only
+    // by direct callers that already target a specific session.
+    std::string sqlWithSession = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
                                  "FROM memory_events WHERE id > ? AND agent_id = ? AND session_id = ? "
                                  "ORDER BY id ASC;";
-    const char* sqlWithoutSession = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
-                                    "FROM memory_events WHERE id > ? AND agent_id = ? "
-                                    "ORDER BY id ASC;";
+    std::string sqlWithoutSession = "SELECT id, agent_id, session_id, event_type, role, content, payload_ref, tool_call_id, tool_name, metadata_json "
+                                    "FROM memory_events WHERE id > ? AND agent_id = ? ";
+    if (!excludedSessionIds.empty()) {
+        std::string notIn = "AND session_id NOT IN (";
+        for (size_t i = 0; i < excludedSessionIds.size(); ++i) {
+            notIn += (i == 0 ? "?" : ",?");
+        }
+        notIn += ") ";
+        sqlWithoutSession += notIn;
+    }
+    sqlWithoutSession += "ORDER BY id ASC;";
+
     SQLiteStatement stmt(db_, sessionId.empty() ? sqlWithoutSession : sqlWithSession);
     if (!stmt) {
         result.error = SqliteFailure(db_, "LoadEventsAfterCursor::prepare").error;
         return result;
     }
-    sqlite3_bind_int64(stmt.get(), 1, cursorValue);
-    sqlite3_bind_text(stmt.get(), 2, agentId.c_str(), -1, SQLITE_TRANSIENT);
+    int bindIndex = 1;
+    sqlite3_bind_int64(stmt.get(), bindIndex++, cursorValue);
+    sqlite3_bind_text(stmt.get(), bindIndex++, agentId.c_str(), -1, SQLITE_TRANSIENT);
     if (!sessionId.empty()) {
-        sqlite3_bind_text(stmt.get(), 3, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt.get(), bindIndex++, sessionId.c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        // sqlWithSession (above) does not carry the NOT IN clause, so the
+        // excluded bindings are only appended on the sqlWithoutSession path.
+        for (const auto& excluded : excludedSessionIds) {
+            sqlite3_bind_text(stmt.get(), bindIndex++, excluded.c_str(), -1, SQLITE_TRANSIENT);
+        }
     }
     int rc = SQLITE_ROW;
     while ((rc = sqlite3_step(stmt.get())) == SQLITE_ROW) {

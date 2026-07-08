@@ -72,6 +72,18 @@ BuiltinMemoryRuntime::Consolidate
 
 `maxEvents` 控制单次最大处理事件数；`forceReprocess` 由运行时决定是否忽略历史 cursor。`forceReprocess=false` 时从 Store 保存的 cursor 之后继续处理；`forceReprocess=true` 时从头重跑当前 agent/session 范围内的事件。`maxEvents<=0` 表示不裁剪批次，当前实现会处理加载到的全部事件。
 
+### 排除会话机制
+
+`MemoryConsolidationRequest.excludedSessionIds` 是一个通用的会话 ID 排除集。非空时，`ConsolidationBatchBuilder::Build` 在 `sessionId` 正向匹配过滤之后、事件类型过滤之前，会跳过 `event.sessionId` 出现在排除集中的事件。被排除的事件：
+
+- 仍然由 Store 持久化（审计回溯）。
+- 仍然推进 `nextCursor`（cursor 在过滤之前赋值，避免下次重复扫描）。
+- 不进入 `batch.events`、不计入 `processedEvents`、不被 LLM/规则处理器看到。
+
+`MemoryEventStore::LoadEventsAfterCursor` 同样接受 `excludedSessionIds` 参数：当 Store 实现是 SQL 后端时，会在 SQL 层加 `AND session_id NOT IN (?, ?, ...)` 动态绑定，避免把注定会被丢弃的行加载进内存。空集时 SQL 与原行为完全一致（向后兼容）。
+
+排除集是**性能优化 + 防御性过滤**的双层保障：Store 层减少 IO，batch builder 层对非 SQL 实现兜底。两者必须同时配置才能保证所有 Store 实现语义一致。
+
 ## LLM 与规则回退
 
 处理顺序：
@@ -103,7 +115,7 @@ BuiltinMemoryRuntime::Consolidate
 ## 错误处理
 
 - 无事件可处理且 `nextCursor` 为空时返回 `succeeded=true`、`processedEvents=0`、空 `error` 和空 `nextCursor`，表示任务成功完成但没有新工作。
-- 如果读取到了事件但全部被批处理过滤掉（例如非 message 事件），`processedEvents=0` 但 `nextCursor` 非空；此时仍会在事务中保存 cursor，避免下次重复扫描同一批被过滤事件。
+- 如果读取到了事件但全部被批处理过滤掉（例如非 message 事件，或全部命中 `excludedSessionIds`），`processedEvents=0` 但 `nextCursor` 非空；此时仍会在事务中保存 cursor，避免下次重复扫描同一批被过滤事件。
 - 写入失败返回 `consolidation_failed`，并尽量传播 Store 层的错误详情。
 - 读取 cursor 失败由 Runtime 返回 `cursor_load_failed`。
 - 读取事件失败由 Runtime 返回 `events_load_failed`。

@@ -36,7 +36,8 @@ public:
     ConsolidationCursorResult LoadConsolidationCursor(const std::string& agentId, const std::string& sessionId) const override;
     MemoryOperationResult SaveConsolidationCursor(const std::string& agentId, const std::string& sessionId, const std::string& cursor) override;
     MemoryEventsResult LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
-                                             const std::string& cursor) const override;
+                                             const std::string& cursor,
+                                             const std::vector<std::string>& excludedSessionIds = {}) const override;
     MemoryEventsResult LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
                                         int limit) const override;
     LongTermMemorySnapshotResult LoadLongTermMemory(const std::string& agentId, int limit,

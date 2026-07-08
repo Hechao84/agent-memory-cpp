@@ -132,12 +132,15 @@ HTTP/MCP 读取 payload 时当前响应 data 为 `{ "uri": "...", "content": "..
 
 当 `forceReprocess=false` 且 `maxEvents=0` 时：不会读取新事件，仅 consolidation 已加载批次，cursor 不会推进。该用法可用于强制触发 consolidation 重新处理已有事件，不摄入新事件。
 
+`excludedSessionIds` 非空时，属于这些 session 的事件仍会被持久化（保留审计回溯能力），仍按既有规则推进 cursor，但不会进入整合批次、不会被 LLM 或规则处理器看到。该字段默认为空，保持"处理所有 session 事件"的旧行为。调用方通常填入系统机械触发的会话标识（如 cron 调度、心跳巡检），避免这些事件污染用户对话沉淀出的长期记忆。
+
 | 字段 | 类型 | 必填 | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `agentId` | string | 是 | 空 | Agent 标识 |
 | `sessionId` | string | 否 | 空 | 会话标识；为空时处理该 agent 下匹配逻辑中的默认会话范围 |
 | `maxEvents` | integer | 否 | `100` | 单次最多处理事件数 |
 | `forceReprocess` | boolean | 否 | `false` | 是否忽略历史 cursor 重跑 |
+| `excludedSessionIds` | string[] | 否 | `[]` | 整合批次需排除的会话 ID 列表；被排除的事件仍入库、仍推进 cursor，但不进入 batch |
 | `metadata` | object | 否 | `{}` | 扩展元数据 |
 
 ### MemoryConsolidationResult

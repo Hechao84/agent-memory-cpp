@@ -91,7 +91,8 @@ public:
         return result;
     }
     MemoryEventsResult LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
-                                             const std::string& cursor) const override
+                                             const std::string& cursor,
+                                             const std::vector<std::string>& excludedSessionIds = {}) const override
     {
         MemoryEventsResult result;
         size_t start = cursor.empty() ? 0 : static_cast<size_t>(std::stoi(cursor));
@@ -100,6 +101,9 @@ public:
                 continue;
             }
             if (!sessionId.empty() && events[i].sessionId != sessionId) {
+                continue;
+            }
+            if (std::find(excludedSessionIds.begin(), excludedSessionIds.end(), events[i].sessionId) != excludedSessionIds.end()) {
                 continue;
             }
             MemoryEvent event = events[i];
@@ -585,6 +589,96 @@ bool TestLlmProcessorAndConsolidation()
     return true;
 }
 
+bool TestBatchBuilderExcludesSessionIds()
+{
+    ConsolidationBatchBuilder builder;
+    std::vector<MemoryEvent> events = {
+        Message("user", "cron-tick", "__CRON__"),
+        Message("user", "real chat", "session-1"),
+        Message("assistant", "real reply", "session-1"),
+        Message("user", "heartbeat-tick", "__HEARTBEAT__"),
+    };
+
+    MemoryConsolidationRequest request;
+    request.sessionId.clear();
+    request.maxEvents = 100;
+    request.excludedSessionIds = {"__CRON__", "__HEARTBEAT__"};
+    auto result = builder.Build(request, events);
+    if (result.batch.events.size() != 2 ||
+        result.batch.events[0].content != "real chat" ||
+        result.batch.events[1].content != "real reply") {
+        std::cerr << "batch builder failed to skip excluded session events\n";
+        return false;
+    }
+    // nextCursor must advance through all 4 events (cursor monotonically
+    // advances even for excluded events so the next run does not rescan).
+    if (result.nextCursor != "4") {
+        std::cerr << "batch builder nextCursor should advance past excluded events\n";
+        return false;
+    }
+    if (result.sessionSummary.find("cron-tick") != std::string::npos ||
+        result.sessionSummary.find("heartbeat-tick") != std::string::npos ||
+        result.sessionSummary.find("real chat") == std::string::npos) {
+        std::cerr << "batch builder session summary must exclude filtered sessions\n";
+        return false;
+    }
+    return true;
+}
+
+bool TestBatchBuilderEmptyExclusionBackwardCompat()
+{
+    ConsolidationBatchBuilder builder;
+    std::vector<MemoryEvent> events = {
+        Message("user", "first", "session-1"),
+        Message("user", "second", "session-2"),
+    };
+
+    MemoryConsolidationRequest request;
+    request.sessionId.clear();
+    request.maxEvents = 100;
+    auto result = builder.Build(request, events);
+    if (result.batch.events.size() != 2) {
+        std::cerr << "empty excludedSessionIds should preserve legacy behavior\n";
+        return false;
+    }
+    return true;
+}
+
+bool TestConsolidationExcludedEventsAdvanceCursorOnly()
+{
+    InMemoryStore store;
+    MemoryUpdateWriter writer(store);
+    RuleBasedLongTermMemoryProcessor fallback;
+    ConsolidationService service(writer, &fallback);
+
+    MemoryConsolidationRequest request;
+    request.agentId = "agent-1";
+    request.sessionId.clear();
+    request.maxEvents = 100;
+    request.excludedSessionIds = {"__CRON__"};
+
+    std::vector<MemoryEvent> events = {
+        Message("user", "cron tick", "__CRON__"),
+    };
+    // Give the event a stable storeCursor so nextCursor is deterministic.
+    events[0].storeCursor = "9";
+
+    auto result = service.Consolidate(request, events, nullptr);
+    if (!result || result.processedEvents != 0 || result.nextCursor != "9") {
+        std::cerr << "excluded-only batch should still advance cursor without processing\n";
+        return false;
+    }
+    if (store.cursors["agent-1:"] != "9") {
+        std::cerr << "excluded-only batch should persist cursor only\n";
+        return false;
+    }
+    if (!store.summaries.empty() || !store.entities.empty() || !store.relations.empty()) {
+        std::cerr << "excluded-only batch should not persist memory updates\n";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 int main()
@@ -623,6 +717,15 @@ int main()
         return 1;
     }
     if (!TestLlmProcessorAndConsolidation()) {
+        return 1;
+    }
+    if (!TestBatchBuilderExcludesSessionIds()) {
+        return 1;
+    }
+    if (!TestBatchBuilderEmptyExclusionBackwardCompat()) {
+        return 1;
+    }
+    if (!TestConsolidationExcludedEventsAdvanceCursorOnly()) {
         return 1;
     }
     return 0;

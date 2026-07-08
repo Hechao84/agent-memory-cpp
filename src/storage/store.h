@@ -112,7 +112,8 @@ public:
 
     virtual MemoryOperationResult SaveEvent(const MemoryEvent& event) = 0;
     virtual MemoryEventsResult LoadEventsAfterCursor(const std::string& agentId, const std::string& sessionId,
-                                                     const std::string& cursor) const = 0;
+                                                     const std::string& cursor,
+                                                     const std::vector<std::string>& excludedSessionIds = {}) const = 0;
     virtual MemoryEventsResult LoadRecentEvents(const std::string& agentId, const std::string& sessionId,
                                                 int limit) const = 0;
 };

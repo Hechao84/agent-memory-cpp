@@ -84,6 +84,59 @@ bool TestEventsAndCursors()
         std::cerr << "event stats failed\n";
         return false;
     }
+
+    // Excluded sessions filter at SQL layer: agent-level query (empty
+    // sessionId) with __CRON__/__HEARTBEAT__ in the exclude set must skip
+    // them while still returning other sessions.
+    MemoryEvent cronEvent = MakeEvent("agent-1", "__CRON__", "user", "cron tick");
+    MemoryEvent heartbeatEvent = MakeEvent("agent-1", "__HEARTBEAT__", "user", "heartbeat tick");
+    if (!store.SaveEvent(cronEvent) || !store.SaveEvent(heartbeatEvent)) {
+        std::cerr << "save excluded event failed\n";
+        return false;
+    }
+    auto filtered = store.LoadEventsAfterCursor("agent-1", "", "",
+                                                std::vector<std::string>{"__CRON__", "__HEARTBEAT__"});
+    if (!filtered.succeeded) {
+        std::cerr << "excluded-session query failed: " << filtered.error.code << "\n";
+        return false;
+    }
+    for (const auto& ev : filtered.events) {
+        if (ev.sessionId == "__CRON__" || ev.sessionId == "__HEARTBEAT__") {
+            std::cerr << "excluded session event should not be returned: " << ev.sessionId << "\n";
+            return false;
+        }
+    }
+    if (filtered.events.size() != 2) {  // session-1 + session-2 from before
+        std::cerr << "excluded-session query returned wrong count: " << filtered.events.size() << "\n";
+        return false;
+    }
+
+    // Empty exclude set: backward compatibility, all events come back.
+    auto all = store.LoadEventsAfterCursor("agent-1", "", "");
+    if (all.events.size() != 4) {
+        std::cerr << "empty exclude set should return all events\n";
+        return false;
+    }
+
+    // sqlWithSession path (non-empty sessionId) ignores excludedSessionIds:
+    // session_id = ? already locks to a single session, so the NOT IN
+    // clause is intentionally not appended to that SQL branch. Asking
+    // for session-1 events while "excluding" session-1 (and others) must
+    // still return the session-1 events -- the exclude set is a no-op on
+    // this code path. This locks the design decision so a future refactor
+    // does not silently start filtering single-session queries.
+    auto sessionScoped = store.LoadEventsAfterCursor(
+        "agent-1", "session-1", "",
+        std::vector<std::string>{"session-1", "__CRON__", "__HEARTBEAT__"});
+    if (!sessionScoped.succeeded) {
+        std::cerr << "session-scoped query with exclude set failed: "
+                  << sessionScoped.error.code << "\n";
+        return false;
+    }
+    if (sessionScoped.events.size() != 1 || sessionScoped.events[0].content != "first") {
+        std::cerr << "session-scoped query must ignore excludedSessionIds\n";
+        return false;
+    }
     return true;
 }
 

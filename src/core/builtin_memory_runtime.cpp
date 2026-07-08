@@ -87,7 +87,8 @@ MemoryConsolidationResult ConsolidateWithModel(BuiltinMemoryRuntimeImpl& impl,
         }
         startCursor = cursorResult.cursor;
     }
-    auto eventsResult = store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor);
+    auto eventsResult = store->LoadEventsAfterCursor(request.agentId, request.sessionId, startCursor,
+                                                     request.excludedSessionIds);
     if (!eventsResult) {
         MemoryConsolidationResult result;
         result.error = eventsResult.error.HasError() ? eventsResult.error
