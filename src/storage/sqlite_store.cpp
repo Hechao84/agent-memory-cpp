@@ -306,6 +306,12 @@ std::string Fts5EscapeQuery(const std::string& query)
             if (escaped.empty()) {
                 continue;
             }
+            {
+                unsigned char prev = static_cast<unsigned char>(escaped.back());
+                if (!std::isalnum(prev) && prev != '_') {
+                    continue;
+                }
+            }
             escaped += c;
             break;
         default:
@@ -315,7 +321,7 @@ std::string Fts5EscapeQuery(const std::string& query)
     }
     if (escaped.empty()) {
         for (char c : query) {
-            if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == ' ' || c == '*') {
+            if (std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == ' ') {
                 escaped += c;
             }
         }
@@ -943,9 +949,9 @@ MemorySearchStoreResult MemorySqliteStore::SearchLongTermMemory(const MemorySear
 
     int limit = request.limit > 0 ? request.limit : 10;
     std::string ftsQuery = Fts5EscapeQuery(request.query);
-    bool ftsFailed = false;
+    bool ftsFailed = ftsQuery.empty();
 
-    {
+    if (!ftsQuery.empty()) {
         const char* sql = "SELECT s.id, s.level, s.topic, s.summary, s.source_refs_json, bm25(fts_memory_summaries) AS rank "
                           "FROM memory_summaries s "
                           "JOIN fts_memory_summaries ON fts_memory_summaries.rowid = s.id "

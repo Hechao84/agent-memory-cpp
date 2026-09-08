@@ -361,6 +361,62 @@ bool TestSearchLikeFallbackEscapesWildcards()
     return true;
 }
 
+bool TestFts5EscapeEdgeCases()
+{
+    MemorySqliteStore store(TempDbPath("fts_escape.db").string());
+    if (!store.Initialize()) {
+        std::cerr << "sqlite initialize failed\n";
+        return false;
+    }
+
+    if (!store.SaveSummary("agent-1", "session-1", "topic", "markdown", "markdown bold italic note", 0.8F,
+                           {"event://fts"})) {
+        std::cerr << "summary save failed for fts escape test\n";
+        return false;
+    }
+
+    auto runQuery = [&](const std::string& query) {
+        MemorySearchRequest search;
+        search.agentId = "agent-1";
+        search.sessionId = "session-1";
+        search.query = query;
+        search.limit = 10;
+        return store.SearchLongTermMemory(search);
+    };
+
+    {
+        auto results = runQuery("**markdown**");
+        if (!results || results.size() == 0 ||
+            results[0].metadata.value("scoreSource", "") != "fts_bm25") {
+            std::cerr << "query '**markdown**' should match via FTS5, got scoreSource="
+                      << (results.size() == 0 ? std::string("empty") : results[0].metadata.value("scoreSource", ""))
+                      << "\n";
+            return false;
+        }
+    }
+
+    {
+        auto results = runQuery("markdown * note");
+        if (!results || results.size() == 0 ||
+            results[0].metadata.value("scoreSource", "") != "fts_bm25") {
+            std::cerr << "query 'markdown * note' should match via FTS5, got scoreSource="
+                      << (results.size() == 0 ? std::string("empty") : results[0].metadata.value("scoreSource", ""))
+                      << "\n";
+            return false;
+        }
+    }
+
+    {
+        auto results = runQuery("*");
+        if (!results) {
+            std::cerr << "query '*' should not corrupt the search\n";
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool TestWriterTransactionRollback()
 {
     MemorySqliteStore store(TempDbPath("writer_rollback.db").string());
@@ -460,7 +516,8 @@ bool TestTransactions()
 int main()
 {
     if (!TestEventsAndCursors() || !TestPayloads() || !TestLongTermMemoryAndSearch() ||
-        !TestSearchLikeFallbackEscapesWildcards() || !TestWriterTransactionRollback() ||
+        !TestSearchLikeFallbackEscapesWildcards() || !TestFts5EscapeEdgeCases() ||
+        !TestWriterTransactionRollback() ||
         !TestUninitializedTransactionDoesNotInitialize() || !TestTransactions()) {
         return 1;
     }
