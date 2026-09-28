@@ -275,48 +275,20 @@ std::string Fts5EscapeQuery(const std::string& query)
 {
     std::string escaped;
     for (char c : query) {
-        switch (c) {
-        case '"':
-        case ':':
-        case '^':
-        case '!':
-        case '+':
-        case '-':
-        case '~':
-        case '@':
-        case '#':
-        case '$':
-        case '%':
-        case '&':
-        case '|':
-        case '(':
-        case ')':
-        case '=':
-        case ';':
-        case '<':
-        case '>':
-        case ',':
-        case '/':
-        case '\\':
-        case '[':
-        case ']':
-        case '?':
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (std::isalnum(uc) || c == '_' || std::isspace(uc) || uc >= 0x80) {
+            escaped += c;
             continue;
-        case '*':
+        }
+        if (c == '*') {
             if (escaped.empty()) {
                 continue;
             }
-            {
-                unsigned char prev = static_cast<unsigned char>(escaped.back());
-                if (!std::isalnum(prev) && prev != '_') {
-                    continue;
-                }
+            unsigned char prev = static_cast<unsigned char>(escaped.back());
+            if (!std::isalnum(prev) && prev != '_') {
+                continue;
             }
             escaped += c;
-            break;
-        default:
-            escaped += c;
-            break;
         }
     }
     if (escaped.empty()) {

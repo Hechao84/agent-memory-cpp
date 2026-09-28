@@ -414,6 +414,32 @@ bool TestFts5EscapeEdgeCases()
         }
     }
 
+    for (const auto& query : std::vector<std::string>{
+             "markdown . note",
+             "markdown ' note",
+             "markdown { note",
+             "markdown ` note",
+             "markdown \" note",
+         }) {
+        auto results = runQuery(query);
+        if (!results || results.size() == 0 ||
+            results[0].metadata.value("scoreSource", "") != "fts_bm25") {
+            std::cerr << "query '" << query
+                      << "' should match via FTS5 (whitelist strips non-bareword chars), got scoreSource="
+                      << (results.size() == 0 ? std::string("empty") : results[0].metadata.value("scoreSource", ""))
+                      << "\n";
+            return false;
+        }
+    }
+
+    {
+        auto results = runQuery("...");
+        if (!results) {
+            std::cerr << "pure-punctuation query '...' should fall back to LIKE without error\n";
+            return false;
+        }
+    }
+
     return true;
 }
 
